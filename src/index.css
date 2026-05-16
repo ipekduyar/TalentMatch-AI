@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: var(--color-indigo-600);
+  --color-background: var(--color-slate-50);
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2.5rem;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+.bento-card {
+  @apply bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm transition-all hover:shadow-md;
+}
+
+.bento-card-dark {
+  @apply bg-slate-900 text-white border-transparent rounded-[2.5rem] p-8 shadow-xl shadow-slate-200;
+}

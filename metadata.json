@@ -1,0 +1,8 @@
+{
+  "name": "TalentMatch AI",
+  "description": "An AI-powered internship matching platform for Turkish university students and companies.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
