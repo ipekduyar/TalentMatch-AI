@@ -10,7 +10,7 @@ import {
   closeCompanyPosting,
   duplicateCompanyPosting,
   getCompanyPostings,
-} from "@/lib/mock-postings-storage";
+} from "@/lib/company-postings-service";
 import { InternshipPosting } from "@/lib/types";
 
 type PostingState = InternshipPosting;
@@ -24,7 +24,7 @@ export const CompanyPostingsPage = () => {
       setPostings([]);
       return;
     }
-    setPostings(getCompanyPostings(company.company_id));
+    void getCompanyPostings(company.company_id).then(setPostings);
   }, [company?.company_id]);
 
   const companyPostings = useMemo(
@@ -53,8 +53,8 @@ export const CompanyPostingsPage = () => {
   const getApplicationsForPosting = (postingId: string) =>
     APPLICATIONS.filter((application) => application.posting_id === postingId);
 
-  const closePosting = (postingId: string) => {
-    const updated = closeCompanyPosting(postingId);
+  const closePosting = async (postingId: string) => {
+    const updated = await closeCompanyPosting(postingId);
     if (!updated) {
       toast.error("Posting could not be closed.");
       return;
@@ -64,8 +64,8 @@ export const CompanyPostingsPage = () => {
     toast.success("Posting closed successfully.");
   };
 
-  const duplicatePosting = (postingId: string) => {
-    const duplicate = duplicateCompanyPosting(postingId);
+  const duplicatePosting = async (postingId: string) => {
+    const duplicate = await duplicateCompanyPosting(postingId);
     if (!duplicate) {
       toast.error("Posting could not be duplicated.");
       return;
