@@ -67,8 +67,13 @@ export const CompanyPostingsNewPage = () => {
       return;
     }
 
-    await createCompanyPosting(posting);
-    toast.success(`Draft saved: ${posting.title}`);
+    const result = await createCompanyPosting(posting);
+
+    if (result.source === "supabase") {
+      toast.success(`Draft saved: ${posting.title}`);
+    } else {
+      toast.warning("Supabase insert failed, saved locally instead.");
+    }
     navigate("/company/postings");
   };
 
@@ -78,8 +83,13 @@ export const CompanyPostingsNewPage = () => {
       return;
     }
 
-    await createCompanyPosting(posting);
-    toast.success(`Submitted for review: ${posting.title}`);
+    const result = await createCompanyPosting(posting);
+
+    if (result.source === "supabase") {
+      toast.success(`Submitted for review: ${posting.title}`);
+    } else {
+      toast.warning("Supabase insert failed, saved locally instead.");
+    }
     navigate("/company/postings");
   };
 

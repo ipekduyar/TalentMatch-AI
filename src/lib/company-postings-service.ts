@@ -10,6 +10,12 @@ import { InternshipPosting } from "@/lib/types";
 
 const TABLE = "internship_postings";
 
+export type CreateCompanyPostingResult = {
+  posting: InternshipPosting;
+  source: "supabase" | "localStorage";
+  error?: string;
+};
+
 const toPosting = (row: InternshipPosting): InternshipPosting => ({ ...row });
 
 export const getCompanyPostings = async (companyId: string): Promise<InternshipPosting[]> => {
@@ -34,9 +40,12 @@ export const getCompanyPostings = async (companyId: string): Promise<InternshipP
   }
 };
 
-export const createCompanyPosting = async (posting: InternshipPosting): Promise<InternshipPosting> => {
+export const createCompanyPosting = async (posting: InternshipPosting): Promise<CreateCompanyPostingResult> => {
   if (!supabase) {
-    return addCompanyPosting(posting);
+    return {
+      posting: addCompanyPosting(posting),
+      source: "localStorage",
+    };
   }
 
   try {
@@ -50,9 +59,20 @@ export const createCompanyPosting = async (posting: InternshipPosting): Promise<
       throw error;
     }
 
-    return toPosting(data as InternshipPosting);
-  } catch {
-    return addCompanyPosting(posting);
+    return {
+      posting: toPosting(data as InternshipPosting),
+      source: "supabase",
+    };
+  } catch (error) {
+    console.error("Supabase insert failed for internship_postings:", error);
+
+    const fallbackPosting = addCompanyPosting(posting);
+
+    return {
+      posting: fallbackPosting,
+      source: "localStorage",
+      error: error instanceof Error ? error.message : JSON.stringify(error),
+    };
   }
 };
 
@@ -108,7 +128,8 @@ export const duplicateCompanyPosting = async (postingId: string): Promise<Intern
       created_at: new Date().toISOString(),
     };
 
-    return await createCompanyPosting(duplicate);
+    const result = await createCompanyPosting(duplicate);
+    return result.posting;
   } catch {
     return localSource(postingId);
   }
