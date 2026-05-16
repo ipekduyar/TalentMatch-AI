@@ -35,7 +35,12 @@ export const PERSONS: Person[] = [
     created_at: '2024-01-01', is_active: true, avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ahmet'
   },
   {
-     person_id: 'p_admin', auth_user_id: 'auth_admin', first_name: 'Admin', last_name: 'User',
+    person_id: 'p12', auth_user_id: 'auth12', first_name: 'Trendyol', last_name: 'HR',
+    email: 'hr@trendyol.com', role: 'company_rep', kvkk_consent: true, kvkk_consent_at: '2024-01-01',
+    created_at: '2024-01-01', is_active: true, avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=TrendyolHR'
+  },
+  {
+     person_id: 'p_admin', auth_user_id: 'auth_admin', first_name: 'Demo', last_name: 'Admin',
      email: 'admin@talentmatch.ai', role: 'admin', kvkk_consent: true, kvkk_consent_at: '2024-01-01',
      created_at: '2024-01-01', is_active: true, avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin'
   }
@@ -72,7 +77,8 @@ export const COMPANIES: Company[] = [
 ];
 
 export const REPS: CompanyRepresentative[] = [
-  { rep_id: 'rep1', person_id: 'p11', company_id: 'c1', job_title: 'HR Manager', is_verified: true }
+  { rep_id: 'rep1', person_id: 'p11', company_id: 'c1', job_title: 'HR Manager', is_verified: true },
+  { rep_id: 'rep2', person_id: 'p12', company_id: 'c2', job_title: 'HR Specialist', is_verified: true }
 ];
 
 export const POSTINGS: InternshipPosting[] = [

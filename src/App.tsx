@@ -84,7 +84,8 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
     { name: 'My Postings', href: '/company/postings', icon: Briefcase },
     { name: 'New Posting', href: '/company/postings/new', icon: Briefcase },
     { name: 'Messages', href: '/company/messages', icon: MessageSquare },
-    { name: 'Team', href: '/company/team', icon: Users },
+    { name: 'Profile', href: '/company/profile', icon: Users },
+    { name: 'Evaluations', href: '/company/evaluations', icon: ShieldCheck },
     { name: 'Billing', href: '/company/billing', icon: Settings },
   ];
 
@@ -210,7 +211,7 @@ const LandingPage = () => (
   </div>
 );
 
-const LoginPage = () => {
+const LegacyLoginPage = () => {
   const { login } = useCurrentUser();
   const navigate = useNavigate();
   const [email, setEmail] = React.useState('ipek@example.com');
@@ -263,7 +264,10 @@ const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode,
   
   if (isLoading) return <div>Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (allowedRoles && !allowedRoles.includes(role || '')) return <Navigate to="/unauthorized" replace />;
+  if (allowedRoles && !allowedRoles.includes(role || '')) {
+    const redirectPath = role === 'company_rep' ? '/company/dashboard' : role === 'admin' ? '/admin' : '/dashboard';
+    return <Navigate to={redirectPath} replace />;
+  }
   
   return <AppLayout>{children}</AppLayout>;
 };
@@ -301,6 +305,11 @@ export default function App() {
           <Route path="/company/postings/:id/applicants" element={<ProtectedRoute allowedRoles={['company_rep']}><ApplicantList /></ProtectedRoute>} />
           <Route path="/company/messages" element={<ProtectedRoute allowedRoles={['company_rep']}><MessagesPage /></ProtectedRoute>} />
           <Route path="/company/messages/:id" element={<ProtectedRoute allowedRoles={['company_rep']}><MessagesPage /></ProtectedRoute>} />
+          <Route path="/company/profile" element={<ProtectedRoute allowedRoles={['company_rep']}><CompanyProfilePage /></ProtectedRoute>} />
+          <Route path="/company/postings" element={<ProtectedRoute allowedRoles={['company_rep']}><CompanyPostingsPage /></ProtectedRoute>} />
+          <Route path="/company/postings/new" element={<ProtectedRoute allowedRoles={['company_rep']}><CompanyPostingsNewPage /></ProtectedRoute>} />
+          <Route path="/company/evaluations" element={<ProtectedRoute allowedRoles={['company_rep']}><CompanyEvaluationsPage /></ProtectedRoute>} />
+          <Route path="/company/billing" element={<ProtectedRoute allowedRoles={['company_rep']}><CompanyBillingPage /></ProtectedRoute>} />
 
           {/* Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminPage /></ProtectedRoute>} />
@@ -335,4 +344,10 @@ import { LearningPathPage } from "./pages/learning-path";
 import { NotificationsPage } from "./pages/notifications-page";
 import { SettingsPage } from "./pages/settings-page";
 import { SignupPage } from "./pages/signup-page";
+import { LoginPage } from "./pages/login-page";
+import { CompanyProfilePage } from "./pages/company-profile";
+import { CompanyPostingsPage } from "./pages/company-postings";
+import { CompanyPostingsNewPage } from "./pages/company-postings-new";
+import { CompanyEvaluationsPage } from "./pages/company-evaluations";
+import { CompanyBillingPage } from "./pages/company-billing";
 

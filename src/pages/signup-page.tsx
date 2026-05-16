@@ -1,4 +1,5 @@
 import React from 'react';
+import { useCurrentUser } from "@/lib/auth-context";
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -19,10 +20,16 @@ export const SignupPage = () => {
   const [searchParams] = useSearchParams();
   const type = searchParams.get('type') || 'student';
   const navigate = useNavigate();
+  const { signupMockUser } = useCurrentUser();
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
+  const [email, setEmail] = React.useState('');
+  const [kvkkConsent, setKvkkConsent] = React.useState(true);
 
   const handleSignup = (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/onboarding');
+    signupMockUser({ firstName, lastName, email, type: type === 'company' ? 'company' : 'student', kvkkConsent });
+    navigate(type === 'company' ? '/company/dashboard' : '/onboarding');
   };
 
   return (
@@ -81,21 +88,24 @@ export const SignupPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div className="space-y-2">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">First Name</label>
-                 <Input required className="h-12 border-slate-200 rounded-xl" placeholder="İpek" />
+                 <Input required value={firstName} onChange={(e) => setFirstName(e.target.value)} className="h-12 border-slate-200 rounded-xl" placeholder="İpek" />
                </div>
                <div className="space-y-2">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Name</label>
-                 <Input required className="h-12 border-slate-200 rounded-xl" placeholder="Duyar" />
+                 <Input required value={lastName} onChange={(e) => setLastName(e.target.value)} className="h-12 border-slate-200 rounded-xl" placeholder="Duyar" />
                </div>
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email Address</label>
-              <Input required type="email" className="h-12 border-slate-200 rounded-xl" placeholder="ipek@example.com" />
+              <Input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 border-slate-200 rounded-xl" placeholder="ipek@example.com" />
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secure Password</label>
               <Input required type="password" className="h-12 border-slate-200 rounded-xl" placeholder="••••••••" />
             </div>
+            <label className="flex items-center gap-2 text-xs text-slate-500">
+              <input type="checkbox" checked={kvkkConsent} onChange={(e) => setKvkkConsent(e.target.checked)} /> KVKK consent
+            </label>
             <Button type="submit" className="w-full h-14 rounded-full font-black tracking-tight text-lg">
               Create My Account <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
