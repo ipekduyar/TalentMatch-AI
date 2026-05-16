@@ -10,17 +10,31 @@ import { POSTINGS, APPLICATIONS, STUDENTS } from "@/lib/mock-data";
 export const CompanyDashboard = () => {
   const { company } = useCurrentUser();
 
-  const companyPostings = POSTINGS.filter((p) => p.company_id === company?.company_id);
-  const applications = APPLICATIONS.filter((a) => companyPostings.some((p) => p.posting_id === a.posting_id));
-  const shortlisted = applications.filter((a) => a.status === "shortlisted").length;
+  const companyPostings = POSTINGS.filter((posting) => posting.company_id === company?.company_id);
+  const applications = APPLICATIONS.filter((application) =>
+    companyPostings.some((posting) => posting.posting_id === application.posting_id),
+  );
 
-  const topApplicants = [...applications]
-    .sort((a, b) => b.match_score - a.match_score)
-    .slice(0, 3)
-    .map((a) => ({ ...a, student: STUDENTS.find((s) => s.student_id === a.student_id) }));
+  const shortlisted = applications.filter((application) => application.status === "shortlisted").length;
+
+  const topApplicants = useMemo(
+    () =>
+      [...applications]
+        .sort((a, b) => b.match_score - a.match_score)
+        .slice(0, 3)
+        .map((application) => ({
+          ...application,
+          student: STUDENTS.find((student) => student.student_id === application.student_id),
+        })),
+    [applications],
+  );
 
   const postingPerformance = useMemo(
-    () => companyPostings.map((p) => ({ title: p.title, apps: APPLICATIONS.filter((a) => a.posting_id === p.posting_id).length })),
+    () =>
+      companyPostings.map((posting) => ({
+        title: posting.title,
+        applicants: APPLICATIONS.filter((application) => application.posting_id === posting.posting_id).length,
+      })),
     [companyPostings],
   );
 
@@ -32,7 +46,10 @@ export const CompanyDashboard = () => {
           <p className="text-slate-500">Welcome back, {company?.name}</p>
         </div>
         <Link to="/company/postings/new">
-          <Button className="bg-blue-600 hover:bg-blue-700"><Plus className="w-4 h-4 mr-2" />New Posting</Button>
+          <Button className="bg-blue-600 hover:bg-blue-700">
+            <Plus className="w-4 h-4 mr-2" />
+            New Posting
+          </Button>
         </Link>
       </div>
 
@@ -43,32 +60,53 @@ export const CompanyDashboard = () => {
       </Card>
 
       <div className="grid md:grid-cols-4 gap-4">
-        {[{ t: "Active Postings", v: companyPostings.length }, { t: "New Applications", v: applications.length }, { t: "Shortlisted Candidates", v: shortlisted }, { t: "Recent Messages", v: 6 }].map((s) => (
-          <Card key={s.t}><CardContent className="p-5"><p className="text-sm text-slate-500">{s.t}</p><p className="text-2xl font-bold text-slate-900">{s.v}</p></CardContent></Card>
+        {[
+          { title: "Active Postings", value: companyPostings.length },
+          { title: "New Applications", value: applications.length },
+          { title: "Shortlisted Candidates", value: shortlisted },
+          { title: "Recent Messages", value: 6 },
+        ].map((item) => (
+          <Card key={item.title}>
+            <CardContent className="p-5">
+              <p className="text-sm text-slate-500">{item.title}</p>
+              <p className="text-2xl font-bold text-slate-900">{item.value}</p>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
-          <CardHeader><CardTitle>Posting Performance</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Posting Performance</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
-            {postingPerformance.map((p) => (
-              <div key={p.title}>
-                <div className="flex justify-between text-sm"><span>{p.title}</span><span>{p.apps} applicants</span></div>
-                <div className="h-2 rounded bg-slate-100 mt-1"><div className="h-2 rounded bg-blue-600" style={{ width: `${Math.min(100, p.apps * 20)}%` }} /></div>
+            {postingPerformance.map((posting) => (
+              <div key={posting.title}>
+                <div className="flex justify-between text-sm">
+                  <span>{posting.title}</span>
+                  <span>{posting.applicants} applicants</span>
+                </div>
+                <div className="h-2 rounded bg-slate-100 mt-1">
+                  <div className="h-2 rounded bg-blue-600" style={{ width: `${Math.min(100, posting.applicants * 20)}%` }} />
+                </div>
               </div>
             ))}
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Top Applicants</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Top Applicants</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-3">
-            {topApplicants.map((a) => (
-              <div key={a.application_id} className="p-3 rounded-lg border">
-                <p className="text-sm font-semibold text-slate-900">{a.student?.department ?? "Student"}</p>
-                <p className="text-xs text-slate-500">Match score: {a.match_score}%</p>
-                <Badge variant="success" className="mt-2">High Match</Badge>
+            {topApplicants.map((application) => (
+              <div key={application.application_id} className="p-3 rounded-lg border">
+                <p className="text-sm font-semibold text-slate-900">{application.student?.department ?? "Student"}</p>
+                <p className="text-xs text-slate-500">Match score: {application.match_score}%</p>
+                <Badge variant="success" className="mt-2">
+                  High Match
+                </Badge>
               </div>
             ))}
           </CardContent>
@@ -77,15 +115,28 @@ export const CompanyDashboard = () => {
 
       <div className="grid lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle>Active Postings</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Active Postings</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-3">
-            {companyPostings.map((p) => <div key={p.posting_id} className="p-3 rounded-lg border text-sm text-slate-700">{p.title} • Deadline {new Date(p.deadline).toLocaleDateString()}</div>)}
+            {companyPostings.map((posting) => (
+              <div key={posting.posting_id} className="p-3 rounded-lg border text-sm text-slate-700">
+                {posting.title} • Deadline {new Date(posting.deadline).toLocaleDateString()}
+              </div>
+            ))}
           </CardContent>
         </Card>
+
         <Card>
-          <CardHeader><CardTitle>Recent Applications & Messages</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Recent Applications & Messages</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-2 text-sm text-slate-700">
-            {applications.slice(0, 4).map((a) => <div key={a.application_id} className="p-3 rounded-lg border">Application {a.application_id.toUpperCase()} • Score {a.match_score}%</div>)}
+            {applications.slice(0, 4).map((application) => (
+              <div key={application.application_id} className="p-3 rounded-lg border">
+                Application {application.application_id.toUpperCase()} • Score {application.match_score}%
+              </div>
+            ))}
             <div className="p-3 rounded-lg border">Message from candidate: "Could we confirm interview time?"</div>
           </CardContent>
         </Card>
