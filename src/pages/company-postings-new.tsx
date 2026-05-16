@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SKILLS } from "@/lib/mock-data";
 import { useCurrentUser } from "@/lib/auth-context";
-import { addCompanyPosting } from "@/lib/mock-postings-storage";
+import { createCompanyPosting } from "@/lib/company-postings-service";
 import { InternshipPosting } from "@/lib/types";
 
 export const CompanyPostingsNewPage = () => {
@@ -61,24 +61,24 @@ export const CompanyPostingsNewPage = () => {
     setDesiredSkills((prev) => (prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId]));
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     const posting = buildPosting("draft");
     if (!posting) {
       return;
     }
 
-    addCompanyPosting(posting);
+    await createCompanyPosting(posting);
     toast.success(`Draft saved: ${posting.title}`);
     navigate("/company/postings");
   };
 
-  const submitForReview = () => {
+  const submitForReview = async () => {
     const posting = buildPosting("pending_review");
     if (!posting) {
       return;
     }
 
-    addCompanyPosting(posting);
+    await createCompanyPosting(posting);
     toast.success(`Submitted for review: ${posting.title}`);
     navigate("/company/postings");
   };
