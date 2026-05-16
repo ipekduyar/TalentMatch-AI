@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useCurrentUser } from "../lib/auth-context";
 import { STUDENTS, PERSONS, SKILLS } from "../lib/mock-data";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
@@ -7,6 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import {
+  MOCK_PARSED_SKILLS,
+  clearMockCvMetadata,
+  formatCvFileSize,
+  getMockCvMetadata,
+  saveMockCvMetadata,
+} from "@/lib/mock-cv-storage";
 import { 
   User, 
   Mail, 
@@ -29,8 +36,32 @@ export const ProfilePage = () => {
     toast.success("Profile updated successfully!");
   };
 
-  const handleFileUpload = () => {
-    toast.info("CV analysis started. This will take a moment.");
+  const [cvMetadata, setCvMetadata] = useState(() => getMockCvMetadata());
+  const uploadTimestamp = useMemo(
+    () => (cvMetadata ? new Date(cvMetadata.uploadedAtIso).toLocaleString() : ""),
+    [cvMetadata]
+  );
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const metadata = {
+      fileName: file.name,
+      fileSizeBytes: file.size,
+      uploadedAtIso: new Date().toISOString(),
+    };
+
+    saveMockCvMetadata(metadata);
+    setCvMetadata(metadata);
+    toast.success("CV uploaded successfully");
+    event.target.value = "";
+  };
+
+  const handleRemoveCv = () => {
+    clearMockCvMetadata();
+    setCvMetadata(null);
+    toast.success("CV removed");
   };
 
   if (!student || !person) return null;
@@ -151,17 +182,36 @@ export const ProfilePage = () => {
                 <p className="text-sm font-medium opacity-90 leading-relaxed">
                   Upload your CV to let our AI extract your latest skills and experiences.
                 </p>
-                <Button 
-                  onClick={handleFileUpload}
-                  className="w-full bg-white text-indigo-600 hover:bg-slate-100 border-none font-black rounded-full"
-                >
-                  <FileUp className="w-4 h-4 mr-2" />
-                  Upload PDF
-                </Button>
-                {student.cv_file_path && (
-                  <p className="text-[10px] font-black uppercase tracking-widest opacity-60 text-center">
-                    Current: resume_final_v2.pdf
-                  </p>
+                <label className="block">
+                  <input type="file" accept=".pdf,.doc,.docx" onChange={handleFileUpload} className="sr-only" />
+                  <span className="w-full inline-flex items-center justify-center bg-white text-indigo-600 hover:bg-slate-100 border-none font-black rounded-full h-10 cursor-pointer">
+                    <FileUp className="w-4 h-4 mr-2" />
+                    {cvMetadata ? "Replace CV" : "Upload PDF"}
+                  </span>
+                </label>
+                {cvMetadata ? (
+                  <div className="text-xs space-y-2 bg-white/10 p-4 rounded-xl">
+                    <p><span className="font-bold">File:</span> {cvMetadata.fileName}</p>
+                    <p><span className="font-bold">Size:</span> {formatCvFileSize(cvMetadata.fileSizeBytes)}</p>
+                    <p><span className="font-bold">Uploaded:</span> {uploadTimestamp}</p>
+                    <div>
+                      <p className="font-bold mb-1">Parsed skills:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {MOCK_PARSED_SKILLS.map((skill) => (
+                          <Badge key={skill} className="bg-white text-indigo-600 border-0">{skill}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <Button variant="outline" onClick={handleRemoveCv} className="w-full border-white text-white hover:bg-white hover:text-indigo-700">
+                      Remove CV
+                    </Button>
+                  </div>
+                ) : (
+                  student.cv_file_path && (
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-60 text-center">
+                      Current: resume_final_v2.pdf
+                    </p>
+                  )
                 )}
              </div>
              <div className="absolute right-[-20%] bottom-[-20%] w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>

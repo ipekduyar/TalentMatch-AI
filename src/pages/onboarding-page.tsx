@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,11 +16,45 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { AIThinking } from "@/components/ai-thinking";
+import {
+  MOCK_PARSED_SKILLS,
+  clearMockCvMetadata,
+  formatCvFileSize,
+  getMockCvMetadata,
+  saveMockCvMetadata,
+} from "@/lib/mock-cv-storage";
 
 export const OnboardingPage = () => {
   const [step, setStep] = useState(1);
   const [isParsing, setIsParsing] = useState(false);
+  const [cvMetadata, setCvMetadata] = useState(() => getMockCvMetadata());
   const navigate = useNavigate();
+  const uploadTimestamp = useMemo(
+    () => (cvMetadata ? new Date(cvMetadata.uploadedAtIso).toLocaleString() : ""),
+    [cvMetadata]
+  );
+
+  const handleCvFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const metadata = {
+      fileName: file.name,
+      fileSizeBytes: file.size,
+      uploadedAtIso: new Date().toISOString(),
+    };
+
+    saveMockCvMetadata(metadata);
+    setCvMetadata(metadata);
+    toast.success("CV uploaded successfully");
+    event.target.value = "";
+  };
+
+  const handleRemoveCv = () => {
+    clearMockCvMetadata();
+    setCvMetadata(null);
+    toast.success("CV removed");
+  };
 
   const handleNext = () => {
     if (step === 2) {
@@ -110,13 +144,32 @@ export const OnboardingPage = () => {
                    <h1 className="text-3xl font-bold text-slate-900">Upload your CV</h1>
                    <p className="text-slate-500">Our AI will automatically extract your skills to build your profile.</p>
                 </div>
-                <div className="border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer group">
+                <label className="block border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer group">
+                   <input type="file" accept=".pdf,.doc,.docx" className="sr-only" onChange={handleCvFileChange} />
                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                       <Upload className="w-8 h-8 text-blue-600" />
                    </div>
-                   <h3 className="font-bold text-lg">Click or drag PDF here</h3>
+                   <h3 className="font-bold text-lg">{cvMetadata ? "Replace your CV" : "Click or drag PDF here"}</h3>
                    <p className="text-sm text-slate-400">PDF up to 10MB</p>
-                </div>
+                </label>
+                {cvMetadata && (
+                  <Card className="border-blue-100">
+                    <CardContent className="pt-6 space-y-3 text-sm">
+                      <p><span className="font-semibold">File:</span> {cvMetadata.fileName}</p>
+                      <p><span className="font-semibold">Size:</span> {formatCvFileSize(cvMetadata.fileSizeBytes)}</p>
+                      <p><span className="font-semibold">Uploaded:</span> {uploadTimestamp}</p>
+                      <div>
+                        <p className="font-semibold mb-2">Parsed skills summary:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {MOCK_PARSED_SKILLS.map((skill) => (
+                            <span key={skill} className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">{skill}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <Button type="button" variant="outline" onClick={handleRemoveCv}>Remove CV</Button>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
