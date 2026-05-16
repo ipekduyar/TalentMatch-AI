@@ -1,35 +1,31 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCurrentUser } from "@/lib/auth-context";
-import { APPLICATIONS, POSTINGS } from "@/lib/mock-data";
+import { APPLICATIONS } from "@/lib/mock-data";
+import {
+  closeCompanyPosting,
+  duplicateCompanyPosting,
+  getCompanyPostings,
+} from "@/lib/mock-postings-storage";
+import { InternshipPosting } from "@/lib/types";
 
-type PostingState = {
-  posting_id: string;
-  company_id: string;
-  rep_id: string;
-  title: string;
-  description: string;
-  location: string;
-  industry: string;
-  start_date: string;
-  duration_weeks: number;
-  is_paid: boolean;
-  monthly_stipend_try: number | null;
-  is_remote: boolean;
-  status: "draft" | "active" | "closed";
-  created_at: string;
-  deadline: string;
-};
+type PostingState = InternshipPosting;
 
 export const CompanyPostingsPage = () => {
   const { company } = useCurrentUser();
-  const [postings, setPostings] = useState<PostingState[]>(
-    POSTINGS.map((posting) => ({ ...posting, status: posting.status as PostingState["status"] })),
-  );
+  const [postings, setPostings] = useState<PostingState[]>([]);
+
+  useEffect(() => {
+    if (!company?.company_id) {
+      setPostings([]);
+      return;
+    }
+    setPostings(getCompanyPostings(company.company_id));
+  }, [company?.company_id]);
 
   const companyPostings = useMemo(
     () => postings.filter((posting) => posting.company_id === company?.company_id),
@@ -58,25 +54,24 @@ export const CompanyPostingsPage = () => {
     APPLICATIONS.filter((application) => application.posting_id === postingId);
 
   const closePosting = (postingId: string) => {
-    setPostings((prev) => prev.map((posting) => (posting.posting_id === postingId ? { ...posting, status: "closed" } : posting)));
+    const updated = closeCompanyPosting(postingId);
+    if (!updated) {
+      toast.error("Posting could not be closed.");
+      return;
+    }
+
+    setPostings((prev) => prev.map((posting) => (posting.posting_id === postingId ? updated : posting)));
     toast.success("Posting closed successfully.");
   };
 
   const duplicatePosting = (postingId: string) => {
-    setPostings((prev) => {
-      const source = prev.find((posting) => posting.posting_id === postingId);
-      if (!source) {
-        return prev;
-      }
-      const duplicate: PostingState = {
-        ...source,
-        posting_id: `${source.posting_id}-copy-${Date.now()}`,
-        title: `${source.title} (Copy)`,
-        status: "draft",
-        created_at: new Date().toISOString(),
-      };
-      return [duplicate, ...prev];
-    });
+    const duplicate = duplicateCompanyPosting(postingId);
+    if (!duplicate) {
+      toast.error("Posting could not be duplicated.");
+      return;
+    }
+
+    setPostings((prev) => [duplicate, ...prev]);
     toast.success("Posting duplicated as draft.");
   };
 
@@ -95,38 +90,10 @@ export const CompanyPostingsPage = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Card className="bg-white rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Active Postings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{metrics.activeCount}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Draft Postings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{metrics.draftCount}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Total Applications</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{metrics.totalApplications}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Average Match Score</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">%{metrics.avgScore}</p>
-          </CardContent>
-        </Card>
+        <Card className="bg-white rounded-xl"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-600">Active Postings</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-slate-900">{metrics.activeCount}</p></CardContent></Card>
+        <Card className="bg-white rounded-xl"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-600">Draft Postings</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-slate-900">{metrics.draftCount}</p></CardContent></Card>
+        <Card className="bg-white rounded-xl"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-600">Total Applications</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-slate-900">{metrics.totalApplications}</p></CardContent></Card>
+        <Card className="bg-white rounded-xl"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-600">Average Match Score</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-slate-900">%{metrics.avgScore}</p></CardContent></Card>
       </div>
 
       <div className="space-y-4">
@@ -149,33 +116,15 @@ export const CompanyPostingsPage = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-700">
-                  <p>
-                    <span className="font-medium text-slate-900">Deadline:</span> {new Date(posting.deadline).toLocaleDateString()}
-                  </p>
-                  <p>
-                    <span className="font-medium text-slate-900">Applicants:</span> {postingApplications.length}
-                  </p>
-                  <p>
-                    <span className="font-medium text-slate-900">Avg Match:</span> %{postingAverageScore}
-                  </p>
+                  <p><span className="font-medium text-slate-900">Deadline:</span> {new Date(posting.deadline).toLocaleDateString()}</p>
+                  <p><span className="font-medium text-slate-900">Applicants:</span> {postingApplications.length}</p>
+                  <p><span className="font-medium text-slate-900">Avg Match:</span> %{postingAverageScore}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => toast.success(`Viewing applicants for ${posting.title}.`)}>
-                    View applicants
-                  </Button>
-                  <Button variant="outline" onClick={() => toast.success(`Edit mode opened for ${posting.title}.`)}>
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => closePosting(posting.posting_id)}
-                    disabled={posting.status === "closed"}
-                  >
-                    Close posting
-                  </Button>
-                  <Button variant="outline" onClick={() => duplicatePosting(posting.posting_id)}>
-                    Duplicate
-                  </Button>
+                  <Button variant="outline" onClick={() => toast.success(`Viewing applicants for ${posting.title}.`)}>View applicants</Button>
+                  <Button variant="outline" onClick={() => toast.success(`Edit mode opened for ${posting.title}.`)}>Edit</Button>
+                  <Button variant="outline" onClick={() => closePosting(posting.posting_id)} disabled={posting.status === "closed"}>Close posting</Button>
+                  <Button variant="outline" onClick={() => duplicatePosting(posting.posting_id)}>Duplicate</Button>
                 </div>
               </CardContent>
             </Card>
