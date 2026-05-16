@@ -1,10 +1,13 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SKILLS } from "@/lib/mock-data";
+import { useCurrentUser } from "@/lib/auth-context";
+import { addCompanyPosting } from "@/lib/mock-postings-storage";
+import { InternshipPosting } from "@/lib/types";
 
 export const CompanyPostingsNewPage = () => {
   const [title, setTitle] = useState("");
@@ -22,6 +25,34 @@ export const CompanyPostingsNewPage = () => {
   const [importanceScore, setImportanceScore] = useState("75");
   const [requiredLevel, setRequiredLevel] = useState("intermediate");
 
+  const navigate = useNavigate();
+  const { company, rep } = useCurrentUser();
+
+  const buildPosting = (status: "draft" | "pending_review"): InternshipPosting | null => {
+    if (!company?.company_id) {
+      toast.error("No company profile found for this account.");
+      return null;
+    }
+
+    return {
+      posting_id: `post_local_${Date.now()}`,
+      company_id: company.company_id,
+      rep_id: rep?.rep_id ?? "rep_unknown",
+      title: title || "Untitled Posting",
+      description,
+      location,
+      industry,
+      start_date: startDate || new Date().toISOString().slice(0, 10),
+      duration_weeks: Number(durationWeeks) || 12,
+      is_paid: isPaid,
+      monthly_stipend_try: isPaid ? Number(monthlyStipend) || 0 : null,
+      is_remote: isRemote,
+      status,
+      created_at: new Date().toISOString(),
+      deadline: deadline || new Date().toISOString().slice(0, 10),
+    };
+  };
+
   const toggleRequiredSkill = (skillId: string) => {
     setRequiredSkills((prev) => (prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId]));
   };
@@ -31,11 +62,25 @@ export const CompanyPostingsNewPage = () => {
   };
 
   const saveDraft = () => {
-    toast.success(`Draft saved: ${title || "Untitled Posting"}`);
+    const posting = buildPosting("draft");
+    if (!posting) {
+      return;
+    }
+
+    addCompanyPosting(posting);
+    toast.success(`Draft saved: ${posting.title}`);
+    navigate("/company/postings");
   };
 
   const submitForReview = () => {
-    toast.success(`Submitted for review: ${title || "Untitled Posting"}`);
+    const posting = buildPosting("pending_review");
+    if (!posting) {
+      return;
+    }
+
+    addCompanyPosting(posting);
+    toast.success(`Submitted for review: ${posting.title}`);
+    navigate("/company/postings");
   };
 
   const previewPosting = () => {
