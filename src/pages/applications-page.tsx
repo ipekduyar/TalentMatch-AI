@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useCurrentUser } from "../lib/auth-context";
-import { APPLICATIONS, POSTINGS, COMPANIES } from "../lib/mock-data";
+import { getMyApplications, type MyApplicationItem } from "../lib/applications-service";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../lib/utils";
+import { Link } from "react-router-dom";
 
 const STATUS_CONFIG = {
   pending: { label: 'Pending', icon: Clock4, color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-100' },
@@ -37,19 +38,35 @@ const STAGES = ['Applied', 'Reviewed', 'Shortlisted', 'Interview', 'Final Result
 export const MyApplicationsPage = () => {
   const { user } = useCurrentUser();
   const [filter, setFilter] = useState<string>('all');
-  const [selectedApp, setSelectedApp] = useState<any>(null);
+  const [selectedApp, setSelectedApp] = useState<MyApplicationItem | null>(null);
+  const [applications, setApplications] = useState<MyApplicationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const studentApps = APPLICATIONS.filter(app => {
+  useEffect(() => {
+    const loadApplications = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const rows = await getMyApplications();
+        setApplications(rows);
+        if (rows.length > 0) setSelectedApp(rows[0]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not load your applications.";
+        setError(message);
+        toast.error(message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadApplications();
+  }, []);
+
+  const studentApps = useMemo(() => applications.filter(app => {
     if (filter === 'all') return true;
     return app.status === filter;
-  });
-
-  const getJobDetails = (postingId: string) => {
-    const posting = POSTINGS.find(p => p.posting_id === postingId);
-    if (!posting) return null;
-    const company = COMPANIES.find(c => c.company_id === posting.company_id);
-    return { ...posting, company };
-  };
+  }), [applications, filter]);
 
   const handleWithdraw = (id: string) => {
     toast.error("Application withdrawn. We've notified the recruiter.");
@@ -85,7 +102,15 @@ export const MyApplicationsPage = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-12 xl:col-span-8 flex flex-col gap-6">
-          {studentApps.length === 0 ? (
+          {loading ? (
+            <Card className="p-10 text-center">
+              <p className="text-slate-500 font-medium">Loading your applications...</p>
+            </Card>
+          ) : error ? (
+            <Card className="p-10 text-center">
+              <p className="text-rose-500 font-medium">{error}</p>
+            </Card>
+          ) : studentApps.length === 0 ? (
             <Card className="p-20 text-center flex flex-col items-center justify-center space-y-6">
               <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center border border-slate-100 shadow-inner">
                 <History className="w-10 h-10 text-slate-300" />
@@ -100,8 +125,6 @@ export const MyApplicationsPage = () => {
             </Card>
           ) : (
             studentApps.map((app) => {
-              const job = getJobDetails(app.posting_id);
-              if (!job) return null;
               const status = STATUS_CONFIG[app.status as keyof typeof STATUS_CONFIG];
               const Icon = status.icon;
 
@@ -117,12 +140,13 @@ export const MyApplicationsPage = () => {
                   <div className="p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                     <div className="flex items-center space-x-6">
                       <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center p-4 border border-slate-100 shadow-inner overflow-hidden flex-shrink-0">
-                         <img referrerPolicy="no-referrer" src={job.company?.logo_url || ''} alt="logo" className="w-full h-full object-contain" />
+                         <CircleDollarSign className="w-8 h-8 text-slate-300" />
                       </div>
                       <div>
-                        <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-2">{job.title}</h3>
+                        <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-2">{app.title}</h3>
+                        <p className="text-sm text-slate-500 mb-2 font-semibold">{app.company_name}</p>
                         <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-slate-400 tracking-widest uppercase">
-                          <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> {job.location}</span>
+                          <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> {app.location}</span>
                           <span className="flex items-center gap-1.5"><Calendar className="w-3 h-3" /> {new Date(app.applied_at).toLocaleDateString()}</span>
                         </div>
                       </div>
@@ -136,7 +160,7 @@ export const MyApplicationsPage = () => {
                       <div className="flex items-center gap-8">
                          <div className="text-right">
                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">Match</p>
-                           <p className="text-3xl font-black text-emerald-500 tracking-tighter">{app.match_score}%</p>
+                           <p className="text-3xl font-black text-emerald-500 tracking-tighter">{app.match_score == null ? '--' : `${app.match_score}%`}</p>
                          </div>
                          <Button size="sm" variant="outline" className="rounded-full px-5 hidden md:flex border-slate-200">
                            Details
@@ -164,7 +188,14 @@ export const MyApplicationsPage = () => {
               {/* Status Stepper */}
               <div className="space-y-4">
                 {STAGES.map((stage, idx) => {
-                  const currentIdx = STAGES.indexOf(selectedApp.status === 'pending' ? 'Applied' : selectedApp.status === 'shortlisted' ? 'Shortlisted' : 'Reviewed');
+                  const stageByStatus: Record<string, string> = {
+                    pending: 'Applied',
+                    reviewed: 'Reviewed',
+                    shortlisted: 'Shortlisted',
+                    accepted: 'Final Result',
+                    rejected: 'Final Result',
+                  };
+                  const currentIdx = STAGES.indexOf(stageByStatus[selectedApp.status] ?? 'Applied');
                   const isCompleted = idx <= currentIdx;
                   return (
                     <div key={stage} className="flex items-center gap-4 group">
@@ -196,9 +227,11 @@ export const MyApplicationsPage = () => {
                   <MessageSquare className="w-5 h-5" />
                   Recruiter Contact
                 </Button>
-                <Button variant="outline" className="w-full rounded-2xl h-14 border-slate-200 text-slate-400 hover:text-slate-900 flex items-center justify-center gap-3">
+                <Button asChild variant="outline" className="w-full rounded-2xl h-14 border-slate-200 text-slate-400 hover:text-slate-900 flex items-center justify-center gap-3">
+                  <Link to={`/postings/${selectedApp.posting_id}`}>
                    <ExternalLink className="w-4 h-4" />
                    View Full Posting
+                  </Link>
                 </Button>
                 <div className="pt-4 flex items-center justify-between">
                    <button 
