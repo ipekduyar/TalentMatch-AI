@@ -40,6 +40,10 @@ export const SignupPage = () => {
   const onChange = (field: string, value: string | boolean) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
+  const formatErrorMessage = (error: unknown) => {
+    if (error instanceof Error && error.message) return error.message;
+    try { return JSON.stringify(error); } catch { return String(error); }
+  };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +68,7 @@ export const SignupPage = () => {
         return;
       }
 
-      await signupMockUser({
+      const person = await signupMockUser({
         firstName: form.firstName,
         lastName: form.lastName,
         email: form.email,
@@ -80,7 +84,9 @@ export const SignupPage = () => {
         termsConsent: form.termsConsent,
       });
       toast.success('Company representative account created. Verification pending.');
-      navigate('/company/dashboard');
+      if (person.role === 'company_rep') navigate('/company/dashboard');
+      else if (person.role === 'admin') navigate('/admin');
+      else navigate('/dashboard');
       return;
     }
 
@@ -92,7 +98,7 @@ export const SignupPage = () => {
       return;
     }
 
-    await signupMockUser({
+    const person = await signupMockUser({
       firstName: form.firstName,
       lastName: form.lastName,
       email: form.email,
@@ -109,9 +115,11 @@ export const SignupPage = () => {
     });
 
     toast.success('Student account created successfully.');
-    navigate('/onboarding');
+    if (person.role === 'company_rep') navigate('/company/dashboard');
+    else if (person.role === 'admin') navigate('/admin');
+    else navigate('/dashboard');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Signup failed');
+      toast.error(formatErrorMessage(error));
     }
   };
 
