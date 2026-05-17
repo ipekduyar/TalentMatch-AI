@@ -79,6 +79,8 @@ export type InternshipPosting = {
   description: string;
   location: string | null;
   industry: string | null;
+  required_skills?: string[];
+  desired_skills?: string[];
   start_date: string | null;
   duration_weeks: number | null;
   is_paid: boolean;
