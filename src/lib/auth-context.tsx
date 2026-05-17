@@ -56,6 +56,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [role, setRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const isSigningUpRef = useRef(false);
+  const formatErrorMessage = useCallback((error: unknown) => {
+    if (error instanceof Error && error.message) return error.message;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }, []);
 
   const hydrateMock = useCallback((person: Person | null) => {
     setUser(person);
@@ -104,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('student profile load failed', studentError);
         throw studentError;
       }
+      if (!studentRow) throw new Error('Login succeeded, but no student profile was found for this user.');
       console.log('Student profile loaded', studentRow);
       setStudent((studentRow as Student) ?? null);
       setRep(null);
@@ -117,6 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('company representative profile load failed', repError);
         throw repError;
       }
+      if (!repRow) throw new Error('Login succeeded, but no company representative profile was found for this user.');
       const typedRep = (repRow as CompanyRepresentative) ?? null;
       console.log('Company representative profile loaded', typedRep);
       setRep(typedRep);
@@ -126,6 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('company profile load failed', companyError);
           throw companyError;
         }
+        if (!companyRow) throw new Error('Login succeeded, but no company profile was found for this user.');
         setCompany((companyRow as Company) ?? null);
       } else {
         setCompany(null);
@@ -216,10 +227,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       return await loadSupabaseProfile(authUserId);
     } catch (profileError) {
-      console.error('Profile loading failed after login:', profileError);
-      throw profileError instanceof Error ? profileError : new Error('Failed to load profile after login.');
+      console.error('profile hydration failed', profileError);
+      throw new Error(formatErrorMessage(profileError));
     }
-  }, [loadSupabaseProfile]);
+  }, [formatErrorMessage, loadSupabaseProfile]);
 
   const logout = useCallback(async () => {
     if (isSupabaseConfigured && supabase) {
@@ -311,7 +322,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           let company: Company | null = null;
           const { data: existingCompany, error: findCompanyError } = await supabase.from('companies').select('*').ilike('name', (data.companyName || '').trim()).maybeSingle();
           if (findCompanyError) {
-            console.error('Company insert/find failed', findCompanyError);
+            console.error('company find failed', findCompanyError);
             throw findCompanyError;
           }
 
@@ -320,7 +331,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             const { data: createdCompany, error } = await supabase.from('companies').insert(companyPayload).select('*').single();
             if (error || !createdCompany) {
-              console.error('Company insert/find failed', error);
+              console.error('company insert failed', error);
               throw error ?? new Error('Unable to create company profile.');
             }
             company = createdCompany as Company;
@@ -350,7 +361,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (profileError) {
         isSigningUpRef.current = false;
         console.error('Signup profile creation failed', profileError);
-        const message = profileError instanceof Error ? profileError.message : 'Unknown error';
+        const message = formatErrorMessage(profileError);
         try {
           await supabase.auth.signOut();
         } catch (signOutError) {
@@ -378,7 +389,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(STORAGE_KEY, created.person_id);
     hydrateMock(created);
     return created;
-  }, [hydrateMock, loadSupabaseProfile]);
+  }, [formatErrorMessage, hydrateMock, loadSupabaseProfile]);
 
   const value = useMemo(() => ({ currentUser: user, user, student, rep, company, role, loginAsDemoUser, loginWithPassword, signupMockUser, logout, switchRole, isLoading }), [user, student, rep, company, role, loginAsDemoUser, loginWithPassword, signupMockUser, logout, switchRole, isLoading]);
 

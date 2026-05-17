@@ -21,6 +21,10 @@ export const LoginPage = () => {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  const formatErrorMessage = (error: unknown) => {
+    if (error instanceof Error && error.message) return error.message;
+    try { return JSON.stringify(error); } catch { return String(error); }
+  };
 
   const handleSupabaseLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +38,7 @@ export const LoginPage = () => {
       else navigate('/dashboard');
     } catch (error) {
       console.error('Login failed:', error);
-      toast.error(error instanceof Error ? error.message : 'Login failed');
+      toast.error(formatErrorMessage(error));
     } finally {
       setLoading(false);
     }
