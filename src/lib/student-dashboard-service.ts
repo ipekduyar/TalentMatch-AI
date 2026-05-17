@@ -87,7 +87,7 @@ export const getActiveInternshipPostings = async (): Promise<InternshipPosting[]
 
   const { data, error } = await supabase
     .from("internship_postings")
-    .select("internship_posting_id, company_id, rep_id, title, description, location, industry, required_skills, desired_skills, start_date, duration_weeks, is_paid, monthly_stipend_try, is_remote, status, created_at, deadline")
+    .select("internship_posting_id, company_id, representative_id, title, description, location, industry, required_skills, desired_skills, start_date, duration_weeks, is_paid, monthly_stipend, is_remote, status, created_at, deadline")
     .eq("status", "active")
     .order("created_at", { ascending: false });
 
@@ -96,14 +96,14 @@ export const getActiveInternshipPostings = async (): Promise<InternshipPosting[]
     return POSTINGS;
   }
 
-  if (!data || data.length === 0) {
-    return POSTINGS;
-  }
+  if (!data || data.length === 0) return [];
+
+  console.log("Loaded active internship postings from Supabase", data.length);
 
   return data.map((posting) => ({
     posting_id: posting.internship_posting_id,
     company_id: posting.company_id,
-    rep_id: posting.rep_id,
+    rep_id: posting.representative_id ?? null,
     title: posting.title,
     description: posting.description,
     location: posting.location,
@@ -113,7 +113,7 @@ export const getActiveInternshipPostings = async (): Promise<InternshipPosting[]
     start_date: posting.start_date,
     duration_weeks: posting.duration_weeks,
     is_paid: posting.is_paid,
-    monthly_stipend_try: posting.monthly_stipend_try,
+    monthly_stipend_try: posting.monthly_stipend ?? null,
     is_remote: posting.is_remote,
     status: posting.status,
     created_at: posting.created_at,
