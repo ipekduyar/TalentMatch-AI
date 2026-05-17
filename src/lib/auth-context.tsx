@@ -56,6 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [role, setRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const isSigningUpRef = useRef(false);
+  const isLoggingInRef = useRef(false);
   const formatErrorMessage = useCallback((error: unknown) => {
     if (error instanceof Error && error.message) return error.message;
     try {
@@ -186,6 +187,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!isSupabaseConfigured || !supabase) return;
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (isLoggingInRef.current) {
+        console.log("Login in progress: skipping auth-state hydration");
+        return;
+      }
       if (!session?.user?.id) {
         setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
         return;
@@ -223,25 +228,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithPassword = useCallback(async (email: string, password: string): Promise<Person> => {
     if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
-    console.log('Starting clean Supabase login');
-    await supabase.auth.signOut({ scope: 'local' });
-    console.log('Signed out stale Supabase session');
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      console.error('login auth failed', error);
-      throw error;
-    }
-    const authUserId = data.user?.id;
-    console.log('Login auth ok', authUserId);
-    if (!authUserId) throw new Error('Login succeeded but no auth user id was returned.');
+    isLoggingInRef.current = true;
+    localStorage.removeItem(STORAGE_KEY);
     try {
-      return await loadSupabaseProfile(authUserId);
-    } catch (profileError) {
-      console.error('Profile hydration failed after login', profileError);
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        console.error('login auth failed', error);
+        throw error;
+      }
+      const authUserId = data.user?.id;
+      console.log('Login auth ok', authUserId);
+      if (!authUserId) throw new Error('Login succeeded but no auth user id was returned.');
+      const hydratedPerson = await loadSupabaseProfile(authUserId);
+      console.log("Login profile hydration complete");
+      isLoggingInRef.current = false;
+      return hydratedPerson;
+    } catch (error) {
+      console.error("Login profile hydration failed", error);
+      const message = formatErrorMessage(error);
+      isLoggingInRef.current = false;
       await supabase.auth.signOut({ scope: 'local' });
-      throw new Error('Login succeeded, but no student/company profile was found for this account. Please delete this test account or sign up again with a new email.');
+      throw new Error(message);
     }
-  }, [loadSupabaseProfile]);
+  }, [loadSupabaseProfile, formatErrorMessage]);
 
   const logout = useCallback(async () => {
     if (isSupabaseConfigured && supabase) {
