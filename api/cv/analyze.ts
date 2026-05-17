@@ -1,6 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
-import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 
 type AnalysisPayload = {
@@ -49,7 +48,10 @@ const extractCvText = async (fileName: string, mimeType: string | null, buffer: 
   const lowerName = fileName.toLowerCase();
 
   if (mimeType === "application/pdf" || lowerName.endsWith(".pdf")) {
-    const parsed = await pdfParse(buffer);
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: buffer });
+    const parsed = await parser.getText();
+    await parser.destroy?.();
     return parsed.text?.trim() ?? "";
   }
 
