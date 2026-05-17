@@ -42,7 +42,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = 'talentmatch_user_id';
-const MOCK_AUTH_KEYS = [STORAGE_KEY];
 
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -97,7 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw error;
     }
     if (!person) {
-      const personError = new Error('Login succeeded, but no profile was found for this user.');
+      const personError = new Error('Login succeeded, but no student/company profile was found for this account. Please delete this test account or sign up again with a new email.');
       console.error('person profile not found', personError);
       throw personError;
     }
@@ -113,7 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('student profile load failed', studentError);
         throw studentError;
       }
-      if (!studentRow) throw new Error('Login succeeded, but no student profile was found for this user.');
+      if (!studentRow) throw new Error('Login succeeded, but no student/company profile was found for this account. Please delete this test account or sign up again with a new email.');
       console.log('Student profile loaded', studentRow);
       setStudent((studentRow as Student) ?? null);
       setRep(null);
@@ -127,7 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('company representative profile load failed', repError);
         throw repError;
       }
-      if (!repRow) throw new Error('Login succeeded, but no company representative profile was found for this user.');
+      if (!repRow) throw new Error('Login succeeded, but no student/company profile was found for this account. Please delete this test account or sign up again with a new email.');
       const typedRep = (repRow as CompanyRepresentative) ?? null;
       console.log('Company representative profile loaded', typedRep);
       setRep(typedRep);
@@ -163,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      MOCK_AUTH_KEYS.forEach((key) => localStorage.removeItem(key));
+      localStorage.removeItem(STORAGE_KEY);
       console.log("Supabase mode active: cleared stale mock auth keys and disabled role switcher");
 
       const { data } = await supabase.auth.getSession();
@@ -224,6 +223,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithPassword = useCallback(async (email: string, password: string): Promise<Person> => {
     if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+    console.log('Starting clean Supabase login');
+    await supabase.auth.signOut({ scope: 'local' });
+    console.log('Signed out stale Supabase session');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       console.error('login auth failed', error);
@@ -235,10 +237,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       return await loadSupabaseProfile(authUserId);
     } catch (profileError) {
-      console.error('profile hydration failed', profileError);
-      throw new Error(formatErrorMessage(profileError));
+      console.error('Profile hydration failed after login', profileError);
+      await supabase.auth.signOut({ scope: 'local' });
+      throw new Error('Login succeeded, but no student/company profile was found for this account. Please delete this test account or sign up again with a new email.');
     }
-  }, [formatErrorMessage, loadSupabaseProfile]);
+  }, [loadSupabaseProfile]);
 
   const logout = useCallback(async () => {
     if (isSupabaseConfigured && supabase) {
@@ -372,14 +375,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return hydratedPerson ?? person;
       } catch (profileError) {
         isSigningUpRef.current = false;
-        console.error('Signup profile creation failed', profileError);
-        const message = formatErrorMessage(profileError);
+        console.error('Signup profile setup failed after auth user creation', profileError);
         try {
-          await supabase.auth.signOut();
+          await supabase.auth.signOut({ scope: 'local' });
         } catch (signOutError) {
           console.error('Signup cleanup signOut failed', signOutError);
         }
-        throw new Error(`Account was created, but profile setup failed: ${message}. Please contact support or try with a new email.`);
+        throw new Error('Account was created, but profile setup failed. Please delete this test user in Supabase Authentication or sign up again with a new email.');
       }
     }
 
