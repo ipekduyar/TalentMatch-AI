@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,17 +18,41 @@ import { toast } from "sonner";
 import { AIThinking } from "@/components/ai-thinking";
 import { MOCK_PARSED_SKILLS, formatCvFileSize } from "@/lib/mock-cv-storage";
 import { getStoredCvMetadata, removeStoredCvMetadata, uploadStudentCv, type CvUploadStatus } from "@/lib/cv-upload-service";
+import { analyzeCv, type CvAnalysisResult } from "@/lib/cv-analysis-service";
+import { supabase } from "@/lib/supabase";
 
 export const OnboardingPage = () => {
   const [step, setStep] = useState(1);
   const [isParsing, setIsParsing] = useState(false);
   const [cvMetadata, setCvMetadata] = useState(() => getStoredCvMetadata());
   const [uploadStatus, setUploadStatus] = useState<CvUploadStatus>(cvMetadata ? "uploaded" : "idle");
+  const [documentId, setDocumentId] = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<CvAnalysisResult | null>(null);
   const navigate = useNavigate();
   const uploadTimestamp = useMemo(
     () => (cvMetadata ? new Date(cvMetadata.uploadedAtIso).toLocaleString() : ""),
     [cvMetadata]
   );
+
+  useEffect(() => {
+    if (cvMetadata) {
+      void refreshLatestDocumentId();
+    }
+  }, [cvMetadata]);
+
+  const refreshLatestDocumentId = async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from("student_documents")
+      .select("document_id")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (!error && data?.[0]?.document_id) {
+      setDocumentId(data[0].document_id);
+    }
+  };
 
   const handleCvFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -44,6 +68,9 @@ export const OnboardingPage = () => {
         uploadedAtIso: result.uploadedAtIso,
       });
       setUploadStatus("uploaded");
+      setAnalysisResult(null);
+      setAnalysisError(null);
+      await refreshLatestDocumentId();
       toast.success("CV uploaded successfully");
     } catch (error) {
       setUploadStatus("failed");
@@ -58,7 +85,31 @@ export const OnboardingPage = () => {
     removeStoredCvMetadata();
     setUploadStatus("idle");
     setCvMetadata(null);
+    setDocumentId(null);
+    setAnalysisResult(null);
+    setAnalysisError(null);
     toast.success("CV removed");
+  };
+
+  const handleAnalyzeCv = async () => {
+    if (!documentId) {
+      setAnalysisError("No uploaded CV document found to analyze.");
+      return;
+    }
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    try {
+      const result = await analyzeCv(documentId);
+      setAnalysisResult(result);
+      setUploadStatus("uploaded");
+      toast.success("CV analysis completed.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAnalysisError(message);
+      toast.error(message);
+    } finally {
+      setAnalysisLoading(false);
+    }
   };
 
   const handleNext = () => {
@@ -172,6 +223,22 @@ export const OnboardingPage = () => {
                           ))}
                         </div>
                       </div>
+                      {documentId && (
+                        <Button type="button" onClick={handleAnalyzeCv} disabled={analysisLoading}>
+                          {analysisLoading ? "Analyzing CV..." : "Analyze CV"}
+                        </Button>
+                      )}
+                      {analysisError && <p className="text-sm text-red-600">{analysisError}</p>}
+                      {analysisResult && (
+                        <div className="space-y-2">
+                          <p><span className="font-semibold">Overall score:</span> {analysisResult.overall_score}</p>
+                          <p><span className="font-semibold">Extracted skills:</span> {analysisResult.extracted_skills.join(", ")}</p>
+                          <p><span className="font-semibold">Strengths:</span> {analysisResult.strengths.join(", ")}</p>
+                          <p><span className="font-semibold">Weaknesses:</span> {analysisResult.weaknesses.join(", ")}</p>
+                          <p><span className="font-semibold">Suggested roles:</span> {analysisResult.suggested_roles.join(", ")}</p>
+                          <p><span className="font-semibold">Improvement suggestions:</span> {analysisResult.improvement_suggestions.join(", ")}</p>
+                        </div>
+                      )}
                       <Button type="button" variant="outline" onClick={handleRemoveCv}>Remove CV</Button>
                     </CardContent>
                   </Card>
