@@ -237,6 +237,21 @@ export const duplicateCompanyPosting = async (postingId: string): Promise<Intern
   return createCompanyPosting(duplicate);
 };
 
+
+export const activateCompanyPosting = async (postingId: string): Promise<InternshipPosting | null> => {
+  if (!isSupabaseConfigured || !supabase) return updateLocalPosting(postingId, { status: 'active' });
+
+  const dbId = postingId;
+  console.log('Activating posting using internship_posting_id', dbId);
+
+  try {
+    return await updateCompanyPosting(dbId, { status: 'active' });
+  } catch (error) {
+    console.error('Failed to activate posting:', error);
+    throw error;
+  }
+};
+
 export const closeCompanyPosting = async (postingId: string): Promise<InternshipPosting | null> => {
   if (!isSupabaseConfigured || !supabase) return closeLocalPosting(postingId);
 
