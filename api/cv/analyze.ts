@@ -44,10 +44,35 @@ const parseStrictAnalysisJson = (raw: string): AnalysisPayload => {
   };
 };
 
+
+const ensurePdfNodePolyfills = async (): Promise<void> => {
+  try {
+    const canvasModule = await import("@napi-rs/canvas");
+    const candidates: Array<["DOMMatrix" | "ImageData" | "Path2D", unknown]> = [
+      ["DOMMatrix", (canvasModule as { DOMMatrix?: unknown }).DOMMatrix],
+      ["ImageData", (canvasModule as { ImageData?: unknown }).ImageData],
+      ["Path2D", (canvasModule as { Path2D?: unknown }).Path2D],
+    ];
+
+    for (const [key, value] of candidates) {
+      if (typeof value !== "undefined" && typeof globalThis[key] === "undefined") {
+        (globalThis as Record<string, unknown>)[key] = value;
+      }
+    }
+
+    if (typeof globalThis.DOMMatrix === "undefined") {
+      throw new Error("Missing DOMMatrix polyfill");
+    }
+  } catch {
+    throw new Error("PDF parsing is not available on this server. Please upload a DOCX file or try again later.");
+  }
+};
+
 const extractCvText = async (fileName: string, mimeType: string | null, buffer: Buffer): Promise<string> => {
   const lowerName = fileName.toLowerCase();
 
   if (mimeType === "application/pdf" || lowerName.endsWith(".pdf")) {
+    await ensurePdfNodePolyfills();
     const { PDFParse } = await import("pdf-parse");
     const parser = new PDFParse({ data: buffer });
     const parsed = await parser.getText();
