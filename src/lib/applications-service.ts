@@ -13,6 +13,28 @@ type ApplicationRecord = {
   updated_at: string;
 };
 
+export type MyApplicationItem = {
+  application_id: string;
+  posting_id: string;
+  title: string;
+  company_name: string;
+  location: string;
+  status: "pending" | "reviewed" | "shortlisted" | "accepted" | "rejected";
+  match_score: number | null;
+  applied_at: string;
+  created_at: string;
+  deadline: string | null;
+  industry: string | null;
+  is_paid: boolean | null;
+  is_remote: boolean | null;
+  duration_weeks: number | null;
+};
+
+const mapApplicationStatus = (status: ApplicationRecord["status"]): MyApplicationItem["status"] => {
+  if (status === "submitted") return "pending";
+  return status;
+};
+
 const ensureSupabase = () => {
   if (!supabase) throw new Error("Supabase is not configured.");
   return supabase;
@@ -131,4 +153,64 @@ export const getExistingApplication = async (postingId: string): Promise<Applica
 
   if (error) throw new Error(error.message || "Could not check existing application.");
   return data;
+};
+
+export const getMyApplications = async (): Promise<MyApplicationItem[]> => {
+  const client = ensureSupabase();
+  const studentId = await getCurrentStudentId();
+
+  const { data, error } = await client
+    .from("applications")
+    .select(`
+      application_id,
+      student_id,
+      internship_posting_id,
+      company_id,
+      status,
+      cover_letter,
+      match_score,
+      created_at,
+      updated_at,
+      internship_postings(
+        internship_posting_id,
+        title,
+        description,
+        location,
+        industry,
+        required_skills,
+        desired_skills,
+        duration_weeks,
+        is_paid,
+        monthly_stipend,
+        is_remote,
+        deadline,
+        companies(name)
+      )
+    `)
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message || "Could not load your applications.");
+
+  return (data ?? []).map((row: any) => {
+    const posting = Array.isArray(row.internship_postings) ? row.internship_postings[0] : row.internship_postings;
+    const company = Array.isArray(posting?.companies) ? posting.companies[0] : posting?.companies;
+
+    return {
+      application_id: row.application_id,
+      posting_id: row.internship_posting_id,
+      title: posting?.title ?? "Untitled Posting",
+      company_name: company?.name ?? "Unknown Company",
+      location: posting?.location ?? "Location unavailable",
+      status: mapApplicationStatus(row.status),
+      match_score: row.match_score,
+      applied_at: row.created_at,
+      created_at: row.created_at,
+      deadline: posting?.deadline ?? null,
+      industry: posting?.industry ?? null,
+      is_paid: posting?.is_paid ?? null,
+      is_remote: posting?.is_remote ?? null,
+      duration_weeks: posting?.duration_weeks ?? null,
+    } satisfies MyApplicationItem;
+  });
 };
