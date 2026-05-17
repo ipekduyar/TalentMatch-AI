@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCurrentUser } from "@/lib/auth-context";
-import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import { useNavigate } from "react-router-dom";
 import { toast } from 'sonner';
 
@@ -16,7 +16,7 @@ const DEMO_USERS = [
 ];
 
 export const LoginPage = () => {
-  const { loginAsDemoUser, role } = useCurrentUser();
+  const { loginAsDemoUser, loginWithPassword } = useCurrentUser();
   const navigate = useNavigate();
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -24,17 +24,20 @@ export const LoginPage = () => {
 
   const handleSupabaseLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isSupabaseConfigured || !supabase) return;
+    if (!isSupabaseConfigured) return;
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success('Logged in successfully.');
-    setTimeout(() => {
-      if (role === 'company_rep') navigate('/company/dashboard');
-      else if (role === 'admin') navigate('/admin');
+    try {
+      const person = await loginWithPassword(email, password);
+      toast.success('Logged in successfully.');
+      if (person.role === 'company_rep') navigate('/company/dashboard');
+      else if (person.role === 'admin') navigate('/admin');
       else navigate('/dashboard');
-    }, 150);
+    } catch (error) {
+      console.error('Login failed:', error);
+      toast.error(error instanceof Error ? error.message : 'Login failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -54,13 +57,15 @@ export const LoginPage = () => {
               <Button disabled={loading} className="w-full" type="submit">{loading ? 'Logging in...' : 'Login'}</Button>
             </form>
           )}
-          <div className="space-y-2 pt-1">
-            {DEMO_USERS.map((demo) => (
-              <Button key={demo.id} variant="outline" className="w-full" onClick={async () => { await loginAsDemoUser(demo.id); navigate(demo.path); }}>
-                {demo.label}
-              </Button>
-            ))}
-          </div>
+          {!isSupabaseConfigured && (
+            <div className="space-y-2 pt-1">
+              {DEMO_USERS.map((demo) => (
+                <Button key={demo.id} variant="outline" className="w-full" onClick={async () => { await loginAsDemoUser(demo.id); navigate(demo.path); }}>
+                  {demo.label}
+                </Button>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
