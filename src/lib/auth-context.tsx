@@ -191,74 +191,113 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [loginAsDemoUser, logout]);
 
   const signupMockUser = useCallback(async (data: SignupMockData): Promise<Person> => {
-    if (isSupabaseConfigured && supabase && data.password) {
-      const { data: auth, error: authError } = await supabase.auth.signUp({ email: data.email, password: data.password });
-      if (authError) throw authError;
-      const authUserId = auth.user?.id;
-      const authSession = auth.session;
-      if (!authUserId) throw new Error('Supabase signUp succeeded but no auth user id was returned.');
-      console.log('Auth signup ok', authUserId);
-      if (!authSession) console.log('Auth signup returned no session (email confirmation may be required)');
+    console.log('Signup type', data.type);
+    console.log('Supabase configured', isSupabaseConfigured);
 
-      console.log('Creating person profile');
-      const nowIso = new Date().toISOString();
-      const { data: personRow, error: personError } = await supabase.from('persons').insert({
-        auth_user_id: authUserId,
-        first_name: data.firstName,
-        last_name: data.lastName,
-        email: data.email,
-        role: data.type === 'company' ? 'company_rep' : 'student',
-        kvkk_consent: data.kvkkConsent,
-        terms_consent: data.termsConsent ?? false,
-        consent_given_at: nowIso,
-      }).select('*').single();
-      if (personError || !personRow) {
-        console.error('Person insert failed during signup', personError);
-        throw new Error(personError?.message ?? 'Unable to create person');
+    if (isSupabaseConfigured) {
+      if (!supabase || !data.password) throw new Error('Supabase is configured but client is unavailable.');
+
+      const role: UserRole = data.type === 'company' ? 'company_rep' : 'student';
+      const { data: auth, error } = await supabase.auth.signUp({ email: data.email, password: data.password });
+      if (error) {
+        console.error('Auth signup failed', error);
+        throw error;
       }
-      const person = personRow as Person;
-      console.log('Person created', person);
 
-      if (data.type === 'student') {
-        console.log('Creating student profile');
-        const { error } = await supabase.from('students').insert({
-          person_id: person.person_id,
-          university: data.university,
-          department: data.department,
-          student_number: data.studentNumber,
-          gpa: data.gpa ?? null,
-          academic_year: data.academicYear,
-          career_goal: data.careerGoal ?? null,
-        }).select('*').single();
-        if (error) { console.error('Student profile insert failed:', error); throw error; }
-      } else {
-        console.log('Creating company representative profile');
-        let companyId: string | null = null;
-        const { data: existingCompany } = await supabase.from('companies').select('company_id').ilike('name', (data.companyName || '').trim()).maybeSingle();
-        companyId = existingCompany?.company_id ?? null;
-        if (!companyId) {
-          const { data: createdCompany, error: companyError } = await supabase.from('companies').insert({
+      const authUserId = auth.user?.id;
+      if (!authUserId) throw new Error('Supabase signUp succeeded but no auth user id was returned.');
+      console.log('Auth signup ok', auth.user?.id);
+
+      try {
+        const nowIso = new Date().toISOString();
+        const personPayload = {
+          auth_user_id: authUserId,
+          first_name: data.firstName,
+          last_name: data.lastName,
+          email: data.email,
+          role,
+          kvkk_consent: data.kvkkConsent,
+          terms_consent: data.termsConsent ?? false,
+          consent_given_at: nowIso,
+        };
+        console.log('Creating person profile payload', personPayload);
+        const { data: personRow, error } = await supabase.from('persons').insert(personPayload).select('*').single();
+        if (error || !personRow) {
+          console.error('Person insert failed', error);
+          throw error ?? new Error('Unable to create person profile.');
+        }
+        const person = personRow as Person;
+        console.log('Person created', person);
+
+        if (role === 'student') {
+          const studentPayload = {
+            person_id: person.person_id,
+            university: data.university,
+            department: data.department,
+            student_number: data.studentNumber,
+            gpa: data.gpa ?? null,
+            academic_year: data.academicYear,
+            career_goal: data.careerGoal ?? null,
+          };
+          console.log('Creating student profile payload', studentPayload);
+          const { data: studentRow, error } = await supabase.from('students').insert(studentPayload).select('*').single();
+          if (error || !studentRow) {
+            console.error('Student insert failed', error);
+            throw error ?? new Error('Unable to create student profile.');
+          }
+          const student = studentRow as Student;
+          console.log('Student created', student);
+        } else {
+          const companyPayload = {
             name: data.companyName,
             industry: data.companyIndustry,
             size: data.companySize ?? 'sme',
             website: data.companyWebsite ?? null,
             location: data.companyLocation ?? null,
-          }).select('company_id').single();
-          if (companyError || !createdCompany) { console.error('Company insert failed:', companyError); throw companyError ?? new Error('Unable to create company'); }
-          companyId = createdCompany.company_id;
+          };
+          console.log('Creating company payload', companyPayload);
+
+          let company: Company | null = null;
+          const { data: existingCompany, error: findCompanyError } = await supabase.from('companies').select('*').ilike('name', (data.companyName || '').trim()).maybeSingle();
+          if (findCompanyError) {
+            console.error('Company insert/find failed', findCompanyError);
+            throw findCompanyError;
+          }
+
+          if (existingCompany) {
+            company = existingCompany as Company;
+          } else {
+            const { data: createdCompany, error } = await supabase.from('companies').insert(companyPayload).select('*').single();
+            if (error || !createdCompany) {
+              console.error('Company insert/find failed', error);
+              throw error ?? new Error('Unable to create company profile.');
+            }
+            company = createdCompany as Company;
+          }
+
+          console.log('Company created/found', company);
+
+          const repPayload = {
+            person_id: person.person_id,
+            company_id: company.company_id,
+            job_title: data.representativeJobTitle ?? null,
+          };
+          console.log('Creating company representative payload', repPayload);
+          const { data: repRow, error } = await supabase.from('company_representatives').insert(repPayload).select('*').single();
+          if (error || !repRow) {
+            console.error('Company representative insert failed', error);
+            throw error ?? new Error('Unable to create company representative profile.');
+          }
+          const rep = repRow as CompanyRepresentative;
+          console.log('Representative created', rep);
         }
 
-        const { error: repError } = await supabase.from('company_representatives').insert({
-          person_id: person.person_id,
-          company_id: companyId,
-          job_title: data.representativeJobTitle ?? null,
-        }).select('*').single();
-        if (repError) { console.error('Company representative insert failed:', repError); throw repError; }
+        await loadSupabaseProfile(authUserId);
+        return person;
+      } catch (profileError) {
+        const message = profileError instanceof Error ? profileError.message : 'Unknown error';
+        throw new Error(`Account was created, but profile setup failed: ${message}. Please contact support or try with a new email.`);
       }
-
-      console.log('Signup profile creation completed');
-      await loadSupabaseProfile(authUserId);
-      return person;
     }
 
     const now = Date.now();

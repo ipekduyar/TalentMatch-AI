@@ -11,7 +11,8 @@ import { toast } from "sonner";
 
 export const SignupPage = () => {
   const [searchParams] = useSearchParams();
-  const type = searchParams.get('type') || 'student';
+  const rawType = searchParams.get('type');
+  const type: 'student' | 'company' = rawType === 'company' ? 'company' : 'student';
   const navigate = useNavigate();
   const { signupMockUser } = useCurrentUser();
 
