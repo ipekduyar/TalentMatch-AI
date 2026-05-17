@@ -35,14 +35,14 @@ export const CompanyPostingsNewPage = () => {
   };
 
   const buildPosting = (status: "draft" | "pending_review"): InternshipPosting | null => {
-    if (!company?.company_id) {
+    if (!isSupabaseConfigured && !company?.company_id) {
       toast.error("No company profile found for this account.");
       return null;
     }
 
     return {
       posting_id: `post_local_${Date.now()}`,
-      company_id: company.company_id,
+      company_id: company?.company_id ?? "",
       rep_id: rep?.rep_id ?? "",
       title: title || "Untitled Posting",
       description,
@@ -77,18 +77,14 @@ export const CompanyPostingsNewPage = () => {
       return;
     }
 
-    if (isSupabaseConfigured && !rep?.rep_id) {
-      toast.error("No company representative profile found for this account.");
-      return;
-    }
-
     try {
+      console.log("Submitting posting form to service", posting);
       await createCompanyPosting(posting);
       toast.success(`Draft saved: ${posting.title}`);
       navigate("/company/postings");
     } catch (error) {
       console.error("Supabase save draft error:", error);
-      toast.error(`Failed to save draft: ${getErrorMessage(error)}`);
+      toast.error(getErrorMessage(error));
     }
   };
 
@@ -98,18 +94,14 @@ export const CompanyPostingsNewPage = () => {
       return;
     }
 
-    if (isSupabaseConfigured && !rep?.rep_id) {
-      toast.error("No company representative profile found for this account.");
-      return;
-    }
-
     try {
+      console.log("Submitting posting form to service", posting);
       await createCompanyPosting(posting);
       toast.success(`Submitted for review: ${posting.title}`);
       navigate("/company/postings");
     } catch (error) {
       console.error("Supabase submit for review error:", error);
-      toast.error(`Failed to submit for review: ${getErrorMessage(error)}`);
+      toast.error(getErrorMessage(error));
     }
   };
 
