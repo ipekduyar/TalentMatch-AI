@@ -16,42 +16,47 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { AIThinking } from "@/components/ai-thinking";
-import {
-  MOCK_PARSED_SKILLS,
-  clearMockCvMetadata,
-  formatCvFileSize,
-  getMockCvMetadata,
-  saveMockCvMetadata,
-} from "@/lib/mock-cv-storage";
+import { MOCK_PARSED_SKILLS, formatCvFileSize } from "@/lib/mock-cv-storage";
+import { getStoredCvMetadata, removeStoredCvMetadata, uploadStudentCv, type CvUploadStatus } from "@/lib/cv-upload-service";
 
 export const OnboardingPage = () => {
   const [step, setStep] = useState(1);
   const [isParsing, setIsParsing] = useState(false);
-  const [cvMetadata, setCvMetadata] = useState(() => getMockCvMetadata());
+  const [cvMetadata, setCvMetadata] = useState(() => getStoredCvMetadata());
+  const [uploadStatus, setUploadStatus] = useState<CvUploadStatus>(cvMetadata ? "uploaded" : "idle");
   const navigate = useNavigate();
   const uploadTimestamp = useMemo(
     () => (cvMetadata ? new Date(cvMetadata.uploadedAtIso).toLocaleString() : ""),
     [cvMetadata]
   );
 
-  const handleCvFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCvFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const metadata = {
-      fileName: file.name,
-      fileSizeBytes: file.size,
-      uploadedAtIso: new Date().toISOString(),
-    };
+    setUploadStatus("uploading");
 
-    saveMockCvMetadata(metadata);
-    setCvMetadata(metadata);
-    toast.success("CV uploaded successfully");
-    event.target.value = "";
+    try {
+      const result = await uploadStudentCv(file);
+      setCvMetadata({
+        fileName: result.fileName,
+        fileSizeBytes: result.fileSizeBytes,
+        uploadedAtIso: result.uploadedAtIso,
+      });
+      setUploadStatus("uploaded");
+      toast.success("CV uploaded successfully");
+    } catch (error) {
+      setUploadStatus("failed");
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(message);
+    } finally {
+      event.target.value = "";
+    }
   };
 
   const handleRemoveCv = () => {
-    clearMockCvMetadata();
+    removeStoredCvMetadata();
+    setUploadStatus("idle");
     setCvMetadata(null);
     toast.success("CV removed");
   };
@@ -158,6 +163,7 @@ export const OnboardingPage = () => {
                       <p><span className="font-semibold">File:</span> {cvMetadata.fileName}</p>
                       <p><span className="font-semibold">Size:</span> {formatCvFileSize(cvMetadata.fileSizeBytes)}</p>
                       <p><span className="font-semibold">Uploaded:</span> {uploadTimestamp}</p>
+                      <p><span className="font-semibold">Status:</span> {uploadStatus}</p>
                       <div>
                         <p className="font-semibold mb-2">Parsed skills summary:</p>
                         <div className="flex flex-wrap gap-2">
@@ -218,7 +224,7 @@ export const OnboardingPage = () => {
               >
                 <ChevronLeft className="w-4 h-4 mr-2" /> Back
               </Button>
-              <Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 px-8">
+              <Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 px-8" disabled={step === 2 && uploadStatus === "uploading"}>
                 {step === 4 ? 'Finish' : 'Continue'} <ChevronRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
