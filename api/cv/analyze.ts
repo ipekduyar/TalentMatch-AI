@@ -11,6 +11,8 @@ type AnalysisPayload = {
   overall_score: number;
 };
 
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+
 const ensureStringArray = (input: unknown, fieldName: string): string[] => {
   if (!Array.isArray(input) || input.some((item) => typeof item !== "string")) {
     throw new Error(`Invalid AI output: ${fieldName} must be an array of strings.`);
@@ -257,7 +259,7 @@ export default async function handler(req: any, res: any) {
 
     const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await genAI.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
     });
 
