@@ -87,7 +87,7 @@ export const getActiveInternshipPostings = async (): Promise<InternshipPosting[]
 
   const { data, error } = await supabase
     .from("internship_postings")
-    .select("internship_posting_id, company_id, rep_id, title, description, location, industry, start_date, duration_weeks, is_paid, monthly_stipend_try, is_remote, status, created_at, deadline")
+    .select("internship_posting_id, company_id, rep_id, title, description, location, industry, required_skills, desired_skills, start_date, duration_weeks, is_paid, monthly_stipend_try, is_remote, status, created_at, deadline")
     .eq("status", "active")
     .order("created_at", { ascending: false });
 
@@ -108,6 +108,8 @@ export const getActiveInternshipPostings = async (): Promise<InternshipPosting[]
     description: posting.description,
     location: posting.location,
     industry: posting.industry,
+    required_skills: Array.isArray(posting.required_skills) ? posting.required_skills : [],
+    desired_skills: Array.isArray(posting.desired_skills) ? posting.desired_skills : [],
     start_date: posting.start_date,
     duration_weeks: posting.duration_weeks,
     is_paid: posting.is_paid,

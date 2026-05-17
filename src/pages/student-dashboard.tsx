@@ -84,14 +84,14 @@ export const StudentDashboard = () => {
     if (!analysis?.extracted_skills?.length) return fallbackSkillData;
     return analysis.extracted_skills.slice(0, 6).map((skill, index) => ({
       name: skill,
-      value: Math.min(95, 80 + (index % 3) * 5),
+      value: Math.max(60, 80 - index * 4),
     }));
   }, [analysis]);
 
   const avgMatchScore = analysis?.overall_score ? `${Math.round(analysis.overall_score)}%` : "82%";
   const skillGapCount = analysis?.weaknesses?.length ? String(analysis.weaknesses.length) : "3";
   const skillGapTrend = analysis?.weaknesses?.length ? "From CV analysis" : "Action required";
-  const bridgeSuggestion = analysis?.weaknesses?.[0] || analysis?.improvement_suggestions?.[0] || null;
+  const bridgeSuggestion = analysis?.improvement_suggestions?.[0] || analysis?.weaknesses?.[0] || null;
 
   const topMatches = useMemo(() => {
     if (!analysis) return fallbackTopMatches;
@@ -102,13 +102,35 @@ export const StudentDashboard = () => {
     return postings
       .map((posting) => {
         let score = 60;
-        const textPool = `${posting.title} ${posting.description} ${posting.industry ?? ""}`.toLowerCase();
+        const titleText = (posting.title ?? "").toLowerCase();
+        const textPool = `${posting.title ?? ""} ${posting.description ?? ""} ${posting.industry ?? ""}`.toLowerCase();
+        const requiredSkills = (posting.required_skills ?? []).map((skill) => skill.toLowerCase());
+        const desiredSkills = (posting.desired_skills ?? []).map((skill) => skill.toLowerCase());
+
         roleKeywords.forEach((keyword) => {
-          if (keyword && textPool.includes(keyword)) score += 8;
+          if (!keyword) return;
+          if (titleText.includes(keyword)) {
+            score += 10;
+            return;
+          }
+          if (textPool.includes(keyword)) {
+            score += 6;
+          }
         });
 
         skillKeywords.forEach((keyword) => {
-          if (keyword && textPool.includes(keyword)) score += 4;
+          if (!keyword) return;
+          if (requiredSkills.some((skill) => skill.includes(keyword) || keyword.includes(skill))) {
+            score += 5;
+            return;
+          }
+          if (desiredSkills.some((skill) => skill.includes(keyword) || keyword.includes(skill))) {
+            score += 3;
+            return;
+          }
+          if (textPool.includes(keyword)) {
+            score += 2;
+          }
         });
 
         const clampedScore = Math.max(60, Math.min(98, score));
@@ -309,6 +331,14 @@ export const StudentDashboard = () => {
                 />
              </CardContent>
            </Card>
+           {isInsightLoading && (
+             <Card className="p-8 border border-slate-200 bg-slate-50/50">
+               <CardTitle className="text-lg mb-2">Loading your personalized insights</CardTitle>
+               <CardDescription>
+                 We are fetching your latest CV analysis and active internship postings.
+               </CardDescription>
+             </Card>
+           )}
            {!isInsightLoading && !analysis && (
              <Card className="p-8 border-dashed border-2 border-indigo-200 bg-indigo-50/40">
                <CardTitle className="text-lg mb-2">Personalize your dashboard</CardTitle>
