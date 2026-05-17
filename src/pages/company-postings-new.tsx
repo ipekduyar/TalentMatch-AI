@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { SKILLS } from "@/lib/mock-data";
 import { useCurrentUser } from "@/lib/auth-context";
 import { createCompanyPosting } from "@/lib/company-postings-service";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { InternshipPosting } from "@/lib/types";
 
 export const CompanyPostingsNewPage = () => {
@@ -28,6 +29,11 @@ export const CompanyPostingsNewPage = () => {
   const navigate = useNavigate();
   const { company, rep } = useCurrentUser();
 
+  const getErrorMessage = (error: unknown) => {
+    if (typeof error === "object" && error !== null && "message" in error) return String((error as { message: string }).message);
+    return String(error);
+  };
+
   const buildPosting = (status: "draft" | "pending_review"): InternshipPosting | null => {
     if (!company?.company_id) {
       toast.error("No company profile found for this account.");
@@ -37,7 +43,7 @@ export const CompanyPostingsNewPage = () => {
     return {
       posting_id: `post_local_${Date.now()}`,
       company_id: company.company_id,
-      rep_id: rep?.rep_id ?? "rep_unknown",
+      rep_id: rep?.rep_id ?? "",
       title: title || "Untitled Posting",
       description,
       location,
@@ -46,6 +52,10 @@ export const CompanyPostingsNewPage = () => {
       duration_weeks: Number(durationWeeks) || 12,
       is_paid: isPaid,
       monthly_stipend_try: isPaid ? Number(monthlyStipend) || 0 : null,
+      required_skills: requiredSkills,
+      desired_skills: desiredSkills,
+      importance_score: Number(importanceScore) || 0,
+      required_level: requiredLevel,
       is_remote: isRemote,
       status,
       created_at: new Date().toISOString(),
@@ -67,14 +77,19 @@ export const CompanyPostingsNewPage = () => {
       return;
     }
 
-    const result = await createCompanyPosting(posting);
-
-    if (result.source === "supabase") {
-      toast.success(`Draft saved: ${posting.title}`);
-    } else {
-      toast.warning("Supabase insert failed, saved locally instead.");
+    if (isSupabaseConfigured && !rep?.rep_id) {
+      toast.error("No company representative profile found for this account.");
+      return;
     }
-    navigate("/company/postings");
+
+    try {
+      await createCompanyPosting(posting);
+      toast.success(`Draft saved: ${posting.title}`);
+      navigate("/company/postings");
+    } catch (error) {
+      console.error("Supabase save draft error:", error);
+      toast.error(`Failed to save draft: ${getErrorMessage(error)}`);
+    }
   };
 
   const submitForReview = async () => {
@@ -83,14 +98,19 @@ export const CompanyPostingsNewPage = () => {
       return;
     }
 
-    const result = await createCompanyPosting(posting);
-
-    if (result.source === "supabase") {
-      toast.success(`Submitted for review: ${posting.title}`);
-    } else {
-      toast.warning("Supabase insert failed, saved locally instead.");
+    if (isSupabaseConfigured && !rep?.rep_id) {
+      toast.error("No company representative profile found for this account.");
+      return;
     }
-    navigate("/company/postings");
+
+    try {
+      await createCompanyPosting(posting);
+      toast.success(`Submitted for review: ${posting.title}`);
+      navigate("/company/postings");
+    } catch (error) {
+      console.error("Supabase submit for review error:", error);
+      toast.error(`Failed to submit for review: ${getErrorMessage(error)}`);
+    }
   };
 
   const previewPosting = () => {
