@@ -16,7 +16,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { AIThinking } from "@/components/ai-thinking";
-import { MOCK_PARSED_SKILLS, formatCvFileSize } from "@/lib/mock-cv-storage";
+import { formatCvFileSize } from "@/lib/mock-cv-storage";
 import { getStoredCvMetadata, removeStoredCvMetadata, uploadStudentCv, type CvUploadStatus } from "@/lib/cv-upload-service";
 import { analyzeCv, type CvAnalysisResult } from "@/lib/cv-analysis-service";
 import { supabase } from "@/lib/supabase";
@@ -36,13 +36,7 @@ export const OnboardingPage = () => {
   const step3Skills = useMemo(() => {
     const extractedSkills =
       analysisResult?.extracted_skills?.filter((skill) => skill.trim().length > 0) ?? [];
-    if (extractedSkills.length > 0) {
-      return extractedSkills.slice(0, 8);
-    }
-    if (MOCK_PARSED_SKILLS.length > 0) {
-      return MOCK_PARSED_SKILLS.slice(0, 8);
-    }
-    return ["Python", "SQL", "Project Management", "Agile", "Excel"].slice(0, 8);
+    return extractedSkills.slice(0, 8);
   }, [analysisResult]);
   const step4CareerGoals = useMemo(() => {
     const suggestedRoles =
@@ -63,12 +57,6 @@ export const OnboardingPage = () => {
     () => (cvMetadata ? new Date(cvMetadata.uploadedAtIso).toLocaleString() : ""),
     [cvMetadata]
   );
-
-  useEffect(() => {
-    if (cvMetadata) {
-      void refreshLatestDocumentId();
-    }
-  }, [cvMetadata]);
 
   useEffect(() => {
     setSkillLevels((currentLevels) => {
@@ -114,7 +102,13 @@ export const OnboardingPage = () => {
       setUploadStatus("uploaded");
       setAnalysisResult(null);
       setAnalysisError(null);
-      await refreshLatestDocumentId();
+      setSelectedCareerGoal(null);
+      setSkillLevels({});
+      if (result.documentId) {
+        setDocumentId(result.documentId);
+      } else {
+        await refreshLatestDocumentId();
+      }
       toast.success("CV uploaded successfully");
     } catch (error) {
       setUploadStatus("failed");
@@ -132,6 +126,8 @@ export const OnboardingPage = () => {
     setDocumentId(null);
     setAnalysisResult(null);
     setAnalysisError(null);
+    setSelectedCareerGoal(null);
+    setSkillLevels({});
     toast.success("CV removed");
   };
 
@@ -145,6 +141,14 @@ export const OnboardingPage = () => {
     try {
       const result = await analyzeCv(documentId);
       setAnalysisResult(result);
+      setSelectedCareerGoal(null);
+      const extractedSkills = result.extracted_skills?.filter((skill) => skill.trim().length > 0) ?? [];
+      setSkillLevels(
+        extractedSkills.reduce<Record<string, number>>((acc, skill) => {
+          acc[skill] = 3;
+          return acc;
+        }, {})
+      );
       setUploadStatus("uploaded");
       toast.success("CV analysis completed.");
     } catch (error) {
@@ -265,11 +269,15 @@ export const OnboardingPage = () => {
                       <p><span className="font-semibold">Status:</span> {uploadStatus}</p>
                       <div>
                         <p className="font-semibold mb-2">Parsed skills summary:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {MOCK_PARSED_SKILLS.map((skill) => (
-                            <span key={skill} className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">{skill}</span>
-                          ))}
-                        </div>
+                        {analysisResult?.extracted_skills?.length ? (
+                          <div className="flex flex-wrap gap-2">
+                            {analysisResult.extracted_skills.map((skill) => (
+                              <span key={skill} className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">{skill}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-slate-500">Analyze your CV to extract skills.</p>
+                        )}
                       </div>
                       {documentId && (
                         <Button type="button" onClick={handleAnalyzeCv} disabled={analysisLoading}>

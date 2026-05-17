@@ -13,6 +13,7 @@ export type CvUploadResult = {
   fileSizeBytes: number;
   uploadedAtIso: string;
   status: Exclude<CvUploadStatus, "idle" | "uploading">;
+  documentId?: string;
   errorMessage?: string;
 };
 
@@ -84,14 +85,18 @@ export const uploadStudentCv = async (file: File): Promise<CvUploadResult> => {
 
   if (uploadError) throw uploadError;
 
-  const { error: insertError } = await supabase.from("student_documents").insert({
-    student_id: studentId,
-    file_path: path,
-    file_name: file.name,
-    file_size: file.size,
-    mime_type: file.type || "application/octet-stream",
-    upload_status: "uploaded",
-  });
+  const { data: insertedDocument, error: insertError } = await supabase
+    .from("student_documents")
+    .insert({
+      student_id: studentId,
+      file_path: path,
+      file_name: file.name,
+      file_size: file.size,
+      mime_type: file.type || "application/octet-stream",
+      upload_status: "uploaded",
+    })
+    .select("document_id")
+    .single();
 
   if (insertError) throw insertError;
 
@@ -100,6 +105,7 @@ export const uploadStudentCv = async (file: File): Promise<CvUploadResult> => {
     fileSizeBytes: file.size,
     uploadedAtIso,
     status: "uploaded",
+    documentId: insertedDocument?.document_id,
   };
 };
 
