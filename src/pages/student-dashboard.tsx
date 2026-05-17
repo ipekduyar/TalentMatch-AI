@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { useCurrentUser } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,9 @@ import {
   Rocket
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { APPLICATIONS, POSTINGS, SKILLS } from "@/lib/mock-data";
+import { APPLICATIONS, POSTINGS } from "@/lib/mock-data";
+import { getActiveInternshipPostings, getLatestCompletedCvAnalysis, LatestCvAnalysis } from "@/lib/student-dashboard-service";
+import { InternshipPosting } from "@/lib/types";
 import { 
   ResponsiveContainer, 
   RadarChart, 
@@ -29,14 +32,18 @@ import {
   YAxis, 
   Tooltip 
 } from "recharts";
+import { ChevronRight } from "lucide-react";
 
 export const StudentDashboard = () => {
   const { user, student } = useCurrentUser();
+  const [analysis, setAnalysis] = useState<LatestCvAnalysis | null>(null);
+  const [isInsightLoading, setIsInsightLoading] = useState(true);
+  const [postings, setPostings] = useState<InternshipPosting[]>(POSTINGS);
   
   const studentApps = APPLICATIONS.filter(a => a.student_id === student?.student_id);
-  const topMatches = POSTINGS.slice(0, 3).map((p, i) => ({ ...p, score: [92, 85, 78][i] }));
+  const fallbackTopMatches = POSTINGS.slice(0, 3).map((p, i) => ({ ...p, score: [92, 85, 78][i] }));
 
-  const skillData = [
+  const fallbackSkillData = [
     { name: 'Python', value: 85 },
     { name: 'SQL', value: 70 },
     { name: 'React', value: 90 },
@@ -52,6 +59,64 @@ export const StudentDashboard = () => {
     { month: 'Apr', score: 82 },
     { month: 'May', score: 90 },
   ];
+
+  useEffect(() => {
+    const loadDashboardInsights = async () => {
+      setIsInsightLoading(true);
+      try {
+        const [latestAnalysis, activePostings] = await Promise.all([
+          getLatestCompletedCvAnalysis(),
+          getActiveInternshipPostings(),
+        ]);
+        setAnalysis(latestAnalysis);
+        setPostings(activePostings);
+      } catch (error) {
+        console.error("Failed to load student dashboard insights", error);
+      } finally {
+        setIsInsightLoading(false);
+      }
+    };
+
+    void loadDashboardInsights();
+  }, []);
+
+  const skillData = useMemo(() => {
+    if (!analysis?.extracted_skills?.length) return fallbackSkillData;
+    return analysis.extracted_skills.slice(0, 6).map((skill, index) => ({
+      name: skill,
+      value: Math.min(95, 80 + (index % 3) * 5),
+    }));
+  }, [analysis]);
+
+  const avgMatchScore = analysis?.overall_score ? `${Math.round(analysis.overall_score)}%` : "82%";
+  const skillGapCount = analysis?.weaknesses?.length ? String(analysis.weaknesses.length) : "3";
+  const skillGapTrend = analysis?.weaknesses?.length ? "From CV analysis" : "Action required";
+  const bridgeSuggestion = analysis?.weaknesses?.[0] || analysis?.improvement_suggestions?.[0] || null;
+
+  const topMatches = useMemo(() => {
+    if (!analysis) return fallbackTopMatches;
+
+    const roleKeywords = analysis.suggested_roles.map((r) => r.toLowerCase());
+    const skillKeywords = analysis.extracted_skills.map((s) => s.toLowerCase());
+
+    return postings
+      .map((posting) => {
+        let score = 60;
+        const textPool = `${posting.title} ${posting.description} ${posting.industry ?? ""}`.toLowerCase();
+        roleKeywords.forEach((keyword) => {
+          if (keyword && textPool.includes(keyword)) score += 8;
+        });
+
+        skillKeywords.forEach((keyword) => {
+          if (keyword && textPool.includes(keyword)) score += 4;
+        });
+
+        const clampedScore = Math.max(60, Math.min(98, score));
+        return { ...posting, score: clampedScore };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+  }, [analysis, fallbackTopMatches, postings]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -87,7 +152,7 @@ export const StudentDashboard = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Avg Match Score" 
-          value="82%" 
+          value={avgMatchScore}
           icon={Target} 
           trend="+5.2% vs last month" 
           trendColor="text-emerald-500"
@@ -101,9 +166,9 @@ export const StudentDashboard = () => {
         />
         <StatCard 
           title="Skill Gaps" 
-          value="3" 
+          value={skillGapCount}
           icon={AlertCircle} 
-          trend="Action required" 
+          trend={skillGapTrend}
           trendColor="text-rose-500"
         />
         <StatCard 
@@ -207,7 +272,11 @@ export const StudentDashboard = () => {
                 <Badge variant="indigo" className="bg-white/10 text-white border-none py-1 uppercase">Accelerator</Badge>
                 <h3 className="text-4xl font-black leading-tight tracking-tighter">Bridge the gap</h3>
                 <p className="text-sm font-medium opacity-90 leading-relaxed">
-                  You are missing <span className="font-black underline underline-offset-4 decoration-white/30 truncate">Advanced Excel</span> required by 18 top roles in your area.
+                  {bridgeSuggestion ? (
+                    <>Your CV can be improved by: <span className="font-black underline underline-offset-4 decoration-white/30 truncate">{bridgeSuggestion}</span>.</>
+                  ) : (
+                    <>You are missing <span className="font-black underline underline-offset-4 decoration-white/30 truncate">Advanced Excel</span> required by 18 top roles in your area.</>
+                  )}
                 </p>
                 <Button className="w-full bg-white text-indigo-600 hover:bg-slate-100 border-none font-black rounded-full h-14">
                   Start Course
@@ -234,12 +303,23 @@ export const StudentDashboard = () => {
                   status="Verified"
                 />
                 <ActivityItem 
-                  text="CV Analysis: 12 new technical skills extracted"
+                  text={analysis ? `CV Analysis completed: ${analysis.extracted_skills.length} skills extracted` : "CV Analysis: 12 new technical skills extracted"}
                   time="2 weeks ago"
                   status="AI Insight"
                 />
              </CardContent>
            </Card>
+           {!isInsightLoading && !analysis && (
+             <Card className="p-8 border-dashed border-2 border-indigo-200 bg-indigo-50/40">
+               <CardTitle className="text-lg mb-2">Personalize your dashboard</CardTitle>
+               <CardDescription className="mb-6">
+                 Upload and analyze your CV to personalize recommendations.
+               </CardDescription>
+               <Link to="/onboarding">
+                 <Button className="rounded-full">Go to onboarding</Button>
+               </Link>
+             </Card>
+           )}
 
            {/* Upcoming Deadlines */}
            <Card className="p-10">
@@ -298,5 +378,3 @@ const ActivityItem = ({ text, time, status }: any) => (
     </div>
   </div>
 );
-
-import { ChevronRight } from "lucide-react";
