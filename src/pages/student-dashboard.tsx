@@ -84,11 +84,11 @@ export const StudentDashboard = () => {
     if (!analysis?.extracted_skills?.length) return fallbackSkillData;
     return analysis.extracted_skills.slice(0, 6).map((skill, index) => ({
       name: skill,
-      value: Math.max(60, 80 - index * 4),
+      value: Math.max(60, 85 - index * 4),
     }));
   }, [analysis]);
 
-  const avgMatchScore = analysis?.overall_score ? `${Math.round(analysis.overall_score)}%` : "82%";
+  const avgMatchScore = typeof analysis?.overall_score === "number" ? `${Math.round(analysis.overall_score)}%` : "82%";
   const skillGapCount = analysis?.weaknesses?.length ? String(analysis.weaknesses.length) : "3";
   const skillGapTrend = analysis?.weaknesses?.length ? "From CV analysis" : "Action required";
   const bridgeSuggestion = analysis?.improvement_suggestions?.[0] || analysis?.weaknesses?.[0] || null;
