@@ -117,7 +117,7 @@ export const SignupPage = () => {
     toast.success('Student account created successfully.');
     if (person.role === 'company_rep') navigate('/company/dashboard');
     else if (person.role === 'admin') navigate('/admin');
-    else navigate('/dashboard');
+    else navigate('/onboarding');
     } catch (error) {
       toast.error(formatErrorMessage(error));
     }
