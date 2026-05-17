@@ -23,7 +23,7 @@ export const CompanyPostingsNewPage = () => {
   const [deadline, setDeadline] = useState("");
   const [requiredSkills, setRequiredSkills] = useState<string[]>([]);
   const [desiredSkills, setDesiredSkills] = useState<string[]>([]);
-  const [importanceScore, setImportanceScore] = useState("75");
+  const [importanceScore, setImportanceScore] = useState("");
   const [requiredLevel, setRequiredLevel] = useState("intermediate");
 
   const navigate = useNavigate();
@@ -32,6 +32,12 @@ export const CompanyPostingsNewPage = () => {
   const getErrorMessage = (error: unknown) => {
     if (typeof error === "object" && error !== null && "message" in error) return String((error as { message: string }).message);
     return String(error);
+  };
+
+  const normalizeImportanceScore = (value: string): number | null => {
+    const parsed = Number(value);
+    if (!value.trim() || Number.isNaN(parsed) || parsed < 1 || parsed > 5) return null;
+    return parsed;
   };
 
   const buildPosting = (status: "draft" | "pending_review"): InternshipPosting | null => {
@@ -54,7 +60,7 @@ export const CompanyPostingsNewPage = () => {
       monthly_stipend_try: isPaid ? Number(monthlyStipend) || 0 : null,
       required_skills: requiredSkills,
       desired_skills: desiredSkills,
-      importance_score: Number(importanceScore) || 0,
+      importance_score: normalizeImportanceScore(importanceScore),
       required_level: requiredLevel,
       is_remote: isRemote,
       status,
@@ -189,8 +195,9 @@ export const CompanyPostingsNewPage = () => {
               <Input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Importance Score</label>
-              <Input type="number" min={0} max={100} value={importanceScore} onChange={(event) => setImportanceScore(event.target.value)} />
+              <label className="text-sm font-medium text-slate-700">Importance Score (1-5)</label>
+              <Input type="number" min={1} max={5} step={1} value={importanceScore} onChange={(event) => setImportanceScore(event.target.value)} />
+              <p className="text-xs text-slate-500">Enter a value between 1 and 5.</p>
             </div>
           </div>
 
