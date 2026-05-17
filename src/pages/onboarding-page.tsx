@@ -90,7 +90,18 @@ export const OnboardingPage = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    console.log("CV file selected", { name: file.name, size: file.size, type: file.type });
+    setCvMetadata({
+      fileName: file.name,
+      fileSizeBytes: file.size,
+      uploadedAtIso: new Date().toISOString(),
+    });
     setUploadStatus("uploading");
+    setAnalysisResult(null);
+    setAnalysisError(null);
+    setSelectedCareerGoal(null);
+    setSkillLevels({});
+    setDocumentId(null);
 
     try {
       const result = await uploadStudentCv(file);
@@ -100,10 +111,6 @@ export const OnboardingPage = () => {
         uploadedAtIso: result.uploadedAtIso,
       });
       setUploadStatus("uploaded");
-      setAnalysisResult(null);
-      setAnalysisError(null);
-      setSelectedCareerGoal(null);
-      setSkillLevels({});
       if (result.documentId) {
         setDocumentId(result.documentId);
       } else {
@@ -113,6 +120,8 @@ export const OnboardingPage = () => {
     } catch (error) {
       setUploadStatus("failed");
       const message = error instanceof Error ? error.message : String(error);
+      setAnalysisError(message);
+      console.error("CV upload failed", error);
       toast.error(message);
     } finally {
       event.target.value = "";
@@ -180,6 +189,19 @@ export const OnboardingPage = () => {
   };
 
   const handleBack = () => setStep(step - 1);
+  const uploadStatusText = useMemo(() => {
+    switch (uploadStatus) {
+      case "uploading":
+        return "Uploading...";
+      case "uploaded":
+        return "Uploaded";
+      case "failed":
+        return "Upload failed";
+      case "idle":
+      default:
+        return "Ready";
+    }
+  }, [uploadStatus]);
 
   return (
     <div className="max-w-3xl mx-auto py-12 px-4">
@@ -265,8 +287,11 @@ export const OnboardingPage = () => {
                     <CardContent className="pt-6 space-y-3 text-sm">
                       <p><span className="font-semibold">File:</span> {cvMetadata.fileName}</p>
                       <p><span className="font-semibold">Size:</span> {formatCvFileSize(cvMetadata.fileSizeBytes)}</p>
-                      <p><span className="font-semibold">Uploaded:</span> {uploadTimestamp}</p>
-                      <p><span className="font-semibold">Status:</span> {uploadStatus}</p>
+                      <p><span className="font-semibold">Selected:</span> {uploadTimestamp}</p>
+                      <p><span className="font-semibold">Status:</span> {uploadStatusText}</p>
+                      {uploadStatus === "uploading" && (
+                        <p className="text-slate-500">Uploading your CV, please wait...</p>
+                      )}
                       <div>
                         <p className="font-semibold mb-2">Parsed skills summary:</p>
                         {analysisResult?.extracted_skills?.length ? (
@@ -279,7 +304,7 @@ export const OnboardingPage = () => {
                           <p className="text-slate-500">Analyze your CV to extract skills.</p>
                         )}
                       </div>
-                      {documentId && (
+                      {uploadStatus === "uploaded" && documentId && (
                         <Button type="button" onClick={handleAnalyzeCv} disabled={analysisLoading}>
                           {analysisLoading ? "Analyzing CV..." : "Analyze CV"}
                         </Button>
