@@ -1,13 +1,16 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { Person, Student, CompanyRepresentative, Company, UserRole } from './types';
 import { PERSONS, STUDENTS, REPS, COMPANIES } from './mock-data';
+import { isSupabaseConfigured, supabase } from './supabase';
 
 interface SignupMockData {
   firstName: string;
   lastName: string;
   email: string;
+  password?: string;
   type: 'student' | 'company';
   kvkkConsent: boolean;
+  termsConsent?: boolean;
   university?: string;
   department?: string;
   studentNumber?: string;
@@ -16,7 +19,7 @@ interface SignupMockData {
   careerGoal?: string;
   companyName?: string;
   companyIndustry?: string;
-  companySize?: "startup" | "sme" | "enterprise" | null;
+  companySize?: 'startup' | 'sme' | 'enterprise' | null;
   companyWebsite?: string;
   companyLocation?: string;
   representativeJobTitle?: string;
@@ -29,15 +32,22 @@ interface AuthContextType {
   rep: CompanyRepresentative | null;
   company: Company | null;
   role: UserRole | null;
-  loginAsDemoUser: (userId: string) => void;
-  signupMockUser: (data: SignupMockData) => Person;
-  logout: () => void;
-  switchRole: (userId?: string) => void;
+  loginAsDemoUser: (userId: string) => Promise<void>;
+  signupMockUser: (data: SignupMockData) => Promise<Person>;
+  logout: () => Promise<void>;
+  switchRole: (userId?: string) => Promise<void>;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = 'talentmatch_user_id';
+
+type ConsentRecord = {
+  kvkk_consent: boolean;
+  kvkk_consent_at: string | null;
+  terms_consent?: boolean;
+  terms_consent_at?: string | null;
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<Person[]>(PERSONS);
@@ -51,54 +61,212 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [role, setRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const hydrate = (person: Person | null) => {
+  const hydrateMock = useCallback((person: Person | null) => {
     setUser(person);
     setRole(person?.role ?? null);
-    if (!person) {
-      setStudent(null); setRep(null); setCompany(null); return;
-    }
+    if (!person) return setStudent(null), setRep(null), void setCompany(null);
     if (person.role === 'student') {
-      setStudent(students.find(st => st.person_id === person.person_id) || null);
-      setRep(null); setCompany(null);
+      setStudent(students.find((st) => st.person_id === person.person_id) || null);
+      setRep(null);
+      setCompany(null);
       return;
     }
     if (person.role === 'company_rep') {
-      const foundRep = reps.find(rp => rp.person_id === person.person_id) || null;
+      const foundRep = reps.find((rp) => rp.person_id === person.person_id) || null;
       setRep(foundRep);
-      setCompany(foundRep ? companies.find(c => c.company_id === foundRep.company_id) || null : null);
+      setCompany(foundRep ? companies.find((c) => c.company_id === foundRep.company_id) || null : null);
       setStudent(null);
       return;
     }
-    setStudent(null); setRep(null); setCompany(null);
+    setStudent(null);
+    setRep(null);
+    setCompany(null);
+  }, [students, reps, companies]);
+
+  const loadSupabaseProfile = useCallback(async (authUserId: string) => {
+    if (!supabase) return;
+    const { data: person, error } = await supabase.from('persons').select('*').eq('auth_user_id', authUserId).single();
+    if (error || !person) throw error ?? new Error('Person profile not found');
+
+    const typedPerson = person as Person;
+    setUser(typedPerson);
+    setRole(typedPerson.role);
+
+    if (typedPerson.role === 'student') {
+      const { data: studentRow } = await supabase.from('students').select('*').eq('person_id', typedPerson.person_id).single();
+      setStudent((studentRow as Student) ?? null);
+      setRep(null);
+      setCompany(null);
+      return typedPerson;
+    }
+
+    if (typedPerson.role === 'company_rep') {
+      const { data: repRow } = await supabase.from('company_representatives').select('*').eq('person_id', typedPerson.person_id).single();
+      const typedRep = (repRow as CompanyRepresentative) ?? null;
+      setRep(typedRep);
+      if (typedRep) {
+        const { data: companyRow } = await supabase.from('companies').select('*').eq('company_id', typedRep.company_id).single();
+        setCompany((companyRow as Company) ?? null);
+      } else {
+        setCompany(null);
+      }
+      setStudent(null);
+      return typedPerson;
+    }
+
+    setStudent(null);
+    setRep(null);
+    setCompany(null);
+    return typedPerson;
+  }, []);
+
+  const upsertPersonWithConsent = async (payload: Record<string, unknown>, consent: ConsentRecord) => {
+    if (!supabase) throw new Error('Supabase not configured');
+    const withTerms = { ...payload, ...consent };
+    const attempt = await supabase.from('persons').upsert(withTerms, { onConflict: 'auth_user_id' }).select('*').single();
+    if (!attempt.error) return attempt;
+    const message = attempt.error.message.toLowerCase();
+    if (message.includes('terms_consent')) {
+      return await supabase
+        .from('persons')
+        .upsert({ ...payload, kvkk_consent: consent.kvkk_consent, kvkk_consent_at: consent.kvkk_consent_at }, { onConflict: 'auth_user_id' })
+        .select('*')
+        .single();
+    }
+    return attempt;
   };
 
   useEffect(() => {
-    const savedId = localStorage.getItem(STORAGE_KEY);
-    hydrate(savedId ? users.find(p => p.person_id === savedId) || null : null);
-    setIsLoading(false);
-  }, [users, students, reps, companies]);
+    let mounted = true;
+    const init = async () => {
+      if (!isSupabaseConfigured || !supabase) {
+        const savedId = localStorage.getItem(STORAGE_KEY);
+        hydrateMock(savedId ? users.find((p) => p.person_id === savedId) || null : null);
+        if (mounted) setIsLoading(false);
+        return;
+      }
+      const { data } = await supabase.auth.getSession();
+      const authUserId = data.session?.user?.id;
+      if (authUserId) {
+        try { await loadSupabaseProfile(authUserId); } catch { setUser(null); }
+      }
+      if (mounted) setIsLoading(false);
+    };
+    init();
 
-  const loginAsDemoUser = (userId: string) => {
-    const found = users.find(p => p.person_id === userId);
-    if (!found) return;
-    localStorage.setItem(STORAGE_KEY, userId);
-    hydrate(found);
-  };
+    if (!isSupabaseConfigured || !supabase) return;
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session?.user?.id) {
+        setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
+        return;
+      }
+      try { await loadSupabaseProfile(session.user.id); } catch { /* no-op */ }
+    });
 
-  const logout = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    hydrate(null);
-  };
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [users, hydrateMock, loadSupabaseProfile]);
 
-  const switchRole = (userId?: string) => {
-    if (!userId) {
-      logout();
+  const loginAsDemoUser = useCallback(async (userId: string) => {
+    if (isSupabaseConfigured && supabase) {
+      const loginTarget = users.find((p) => p.person_id === userId);
+      if (loginTarget) hydrateMock(loginTarget);
       return;
     }
-    loginAsDemoUser(userId);
-  };
+    const found = users.find((p) => p.person_id === userId);
+    if (!found) return;
+    localStorage.setItem(STORAGE_KEY, userId);
+    hydrateMock(found);
+  }, [users, hydrateMock]);
 
-  const signupMockUser = (data: SignupMockData): Person => {
+  const logout = useCallback(async () => {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.auth.signOut();
+      setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
+      return;
+    }
+    localStorage.removeItem(STORAGE_KEY);
+    hydrateMock(null);
+  }, [hydrateMock]);
+
+  const switchRole = useCallback(async (userId?: string) => {
+    if (!userId) return logout();
+    return loginAsDemoUser(userId);
+  }, [loginAsDemoUser, logout]);
+
+  const signupMockUser = useCallback(async (data: SignupMockData): Promise<Person> => {
+    if (isSupabaseConfigured && supabase && data.password) {
+      const { data: auth, error: authError } = await supabase.auth.signUp({ email: data.email, password: data.password });
+      if (authError) throw authError;
+      const authUserId = auth.user?.id;
+      if (!authUserId) throw new Error('Supabase signUp succeeded but no auth user id was returned.');
+
+      const nowIso = new Date().toISOString();
+      const consent: ConsentRecord = {
+        kvkk_consent: data.kvkkConsent,
+        kvkk_consent_at: data.kvkkConsent ? nowIso : null,
+        terms_consent: data.termsConsent ?? false,
+        terms_consent_at: data.termsConsent ? nowIso : null,
+      };
+
+      const { data: personRow, error: personError } = await upsertPersonWithConsent({
+        auth_user_id: authUserId,
+        first_name: data.firstName,
+        last_name: data.lastName,
+        email: data.email,
+        role: data.type === 'company' ? 'company_rep' : 'student',
+        is_active: true,
+      }, consent);
+      if (personError || !personRow) throw personError ?? new Error('Unable to create person');
+      const person = personRow as Person;
+
+      if (data.type === 'student') {
+        const { error } = await supabase.from('students').upsert({
+          person_id: person.person_id,
+          university: data.university,
+          department: data.department,
+          student_number: data.studentNumber,
+          gpa: data.gpa ?? null,
+          academic_year: data.academicYear,
+          career_goal: data.careerGoal ?? null,
+          profile_complete: false,
+          is_edu_verified: false,
+        }, { onConflict: 'person_id' });
+        if (error) throw error;
+      } else {
+        let companyId: string | null = null;
+        const { data: existingCompany } = await supabase.from('companies').select('company_id').ilike('name', (data.companyName || '').trim()).maybeSingle();
+        companyId = existingCompany?.company_id ?? null;
+        if (!companyId) {
+          const { data: createdCompany, error: companyError } = await supabase.from('companies').insert({
+            name: data.companyName,
+            industry: data.companyIndustry,
+            size: data.companySize ?? 'sme',
+            website: data.companyWebsite ?? null,
+            location: data.companyLocation ?? null,
+            description: null,
+            is_approved: false,
+            is_premium: false,
+          }).select('company_id').single();
+          if (companyError || !createdCompany) throw companyError ?? new Error('Unable to create company');
+          companyId = createdCompany.company_id;
+        }
+
+        const { error: repError } = await supabase.from('company_representatives').upsert({
+          person_id: person.person_id,
+          company_id: companyId,
+          job_title: data.representativeJobTitle ?? null,
+          is_verified: false,
+        }, { onConflict: 'person_id' });
+        if (repError) throw repError;
+      }
+
+      await loadSupabaseProfile(authUserId);
+      return person;
+    }
+
     const now = Date.now();
     const created: Person = {
       person_id: `p_mock_${now}`,
@@ -113,71 +281,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       is_active: true,
       avatar_url: null,
     };
-
-    if (data.type === 'student') {
-      const createdStudent: Student = {
-        student_id: `st_mock_${now}`,
-        person_id: created.person_id,
-        university: data.university || 'Unknown University',
-        department: data.department || 'Undeclared',
-        student_number: data.studentNumber || `S${now}`,
-        gpa: data.gpa ?? null,
-        academic_year: data.academicYear || 1,
-        graduation_date: null,
-        career_goal: data.careerGoal || null,
-        cv_file_path: null,
-        cv_parsed_text: null,
-        is_edu_verified: false,
-        profile_complete: false,
-      };
-      setStudents(prev => [...prev, createdStudent]);
-    }
-
-    if (data.type === 'company') {
-      const matchedCompany = companies.find(
-        company => company.name.toLowerCase() === (data.companyName || '').trim().toLowerCase()
-      );
-      const companyId = matchedCompany?.company_id || `c_mock_${now}`;
-
-      if (!matchedCompany) {
-        const createdCompany: Company = {
-          company_id: companyId,
-          name: data.companyName || 'New Company',
-          industry: data.companyIndustry || 'Other',
-          size: data.companySize || 'sme',
-          website: data.companyWebsite || null,
-          location: data.companyLocation || null,
-          description: 'Pending verification company profile.',
-          logo_url: null,
-          is_premium: false,
-          is_approved: false,
-          avg_evaluation_score: null,
-          created_at: new Date().toISOString(),
-        };
-        setCompanies(prev => [...prev, createdCompany]);
-      }
-
-      const createdRep: CompanyRepresentative = {
-        rep_id: `rep_mock_${now}`,
-        person_id: created.person_id,
-        company_id: companyId,
-        job_title: data.representativeJobTitle || 'Representative',
-        is_verified: false,
-      };
-      setReps(prev => [...prev, createdRep]);
-    }
-
-    setUsers(prev => [...prev, created]);
+    setUsers((prev) => [...prev, created]);
     localStorage.setItem(STORAGE_KEY, created.person_id);
-    hydrate(created);
+    hydrateMock(created);
     return created;
-  };
+  }, [hydrateMock, loadSupabaseProfile]);
 
-  return (
-    <AuthContext.Provider value={{ currentUser: user, user, student, rep, company, role, loginAsDemoUser, signupMockUser, logout, switchRole, isLoading }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = useMemo(() => ({ currentUser: user, user, student, rep, company, role, loginAsDemoUser, signupMockUser, logout, switchRole, isLoading }), [user, student, rep, company, role, loginAsDemoUser, signupMockUser, logout, switchRole, isLoading]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useCurrentUser = () => {
