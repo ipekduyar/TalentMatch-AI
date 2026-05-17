@@ -19,12 +19,22 @@ export const CompanyPostingsPage = () => {
   const { company } = useCurrentUser();
   const [postings, setPostings] = useState<PostingState[]>([]);
 
+  const getErrorMessage = (error: unknown) => {
+    if (typeof error === "object" && error !== null && "message" in error) return String((error as { message: string }).message);
+    return String(error);
+  };
+
   useEffect(() => {
     if (!company?.company_id) {
       setPostings([]);
       return;
     }
-    void getCompanyPostings(company.company_id).then(setPostings);
+    void getCompanyPostings(company.company_id)
+      .then(setPostings)
+      .catch((error) => {
+        console.error("Supabase get postings error:", error);
+        toast.error(`Failed to load postings: ${getErrorMessage(error)}`);
+      });
   }, [company?.company_id]);
 
   const companyPostings = useMemo(
@@ -54,25 +64,35 @@ export const CompanyPostingsPage = () => {
     APPLICATIONS.filter((application) => application.posting_id === postingId);
 
   const closePosting = async (postingId: string) => {
-    const updated = await closeCompanyPosting(postingId);
-    if (!updated) {
-      toast.error("Posting could not be closed.");
-      return;
-    }
+    try {
+      const updated = await closeCompanyPosting(postingId);
+      if (!updated) {
+        toast.error("Posting could not be closed.");
+        return;
+      }
 
-    setPostings((prev) => prev.map((posting) => (posting.posting_id === postingId ? updated : posting)));
-    toast.success("Posting closed successfully.");
+      setPostings((prev) => prev.map((posting) => (posting.posting_id === postingId ? updated : posting)));
+      toast.success("Posting closed successfully.");
+    } catch (error) {
+      console.error("Supabase close posting error:", error);
+      toast.error(`Failed to close posting: ${getErrorMessage(error)}`);
+    }
   };
 
   const duplicatePosting = async (postingId: string) => {
-    const duplicate = await duplicateCompanyPosting(postingId);
-    if (!duplicate) {
-      toast.error("Posting could not be duplicated.");
-      return;
-    }
+    try {
+      const duplicate = await duplicateCompanyPosting(postingId);
+      if (!duplicate) {
+        toast.error("Posting could not be duplicated.");
+        return;
+      }
 
-    setPostings((prev) => [duplicate, ...prev]);
-    toast.success("Posting duplicated as draft.");
+      setPostings((prev) => [duplicate, ...prev]);
+      toast.success("Posting duplicated as draft.");
+    } catch (error) {
+      console.error("Supabase duplicate posting error:", error);
+      toast.error(`Failed to duplicate posting: ${getErrorMessage(error)}`);
+    }
   };
 
   const statusBadgeVariant = (status: PostingState["status"]) => (status === "active" ? "default" : status === "draft" ? "secondary" : "outline");
@@ -111,7 +131,9 @@ export const CompanyPostingsPage = () => {
                 </div>
                 <p className="text-sm text-slate-600">
                   {posting.location} • {posting.duration_weeks} weeks • {posting.is_paid ? "Paid" : "Unpaid"}
-                  {posting.is_paid && posting.monthly_stipend_try ? ` • ₺${posting.monthly_stipend_try.toLocaleString()} / month` : ""}
+                  {posting.is_paid && (posting.monthly_stipend_try ?? (posting as { monthly_stipend?: number | null }).monthly_stipend)
+                    ? ` • ₺${(posting.monthly_stipend_try ?? (posting as { monthly_stipend?: number | null }).monthly_stipend)?.toLocaleString()} / month`
+                    : ""}
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">

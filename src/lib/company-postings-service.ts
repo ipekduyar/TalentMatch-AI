@@ -10,37 +10,40 @@ import { InternshipPosting } from '@/lib/types';
 
 const TABLE = 'internship_postings';
 
-export type CreateCompanyPostingResult = {
-  posting: InternshipPosting;
-  source: 'supabase' | 'localStorage';
-  error?: string;
+type PostingRow = InternshipPosting & {
+  representative_id?: string | null;
+  monthly_stipend?: number | null;
+  required_skills?: string[] | null;
+  desired_skills?: string[] | null;
+  importance_score?: number | null;
+  required_level?: string | null;
 };
 
-const toPosting = (row: InternshipPosting): InternshipPosting => ({ ...row });
+const toPosting = (row: PostingRow): InternshipPosting => ({
+  ...(row as InternshipPosting),
+  rep_id: row.rep_id ?? row.representative_id ?? '',
+  monthly_stipend_try: row.monthly_stipend_try ?? row.monthly_stipend ?? null,
+});
 
-const resolveCurrentRepProfile = async () => {
-  if (!supabase) throw new Error('Supabase not configured.');
-  const { data: auth } = await supabase.auth.getUser();
-  const authUserId = auth.user?.id;
-  if (!authUserId) throw new Error('No authenticated user.');
-
-  const { data: person, error: personError } = await supabase
-    .from('persons')
-    .select('person_id,role')
-    .eq('auth_user_id', authUserId)
-    .single();
-  if (personError || !person) throw personError ?? new Error('Person profile not found.');
-  if (person.role !== 'company_rep') throw new Error('Authenticated user is not a company representative.');
-
-  const { data: rep, error: repError } = await supabase
-    .from('company_representatives')
-    .select('rep_id,company_id')
-    .eq('person_id', person.person_id)
-    .single();
-  if (repError || !rep) throw repError ?? new Error('Company representative profile not found.');
-
-  return rep;
-};
+const mapInsertPayload = (posting: InternshipPosting, overrides?: { companyId?: string; representativeId?: string }) => ({
+  company_id: overrides?.companyId ?? posting.company_id,
+  representative_id: overrides?.representativeId ?? posting.rep_id,
+  title: posting.title,
+  description: posting.description,
+  location: posting.location,
+  industry: posting.industry,
+  start_date: posting.start_date,
+  duration_weeks: posting.duration_weeks,
+  is_paid: posting.is_paid,
+  monthly_stipend: posting.monthly_stipend_try,
+  is_remote: posting.is_remote,
+  deadline: posting.deadline,
+  status: posting.status,
+  required_skills: (posting as PostingRow).required_skills ?? [],
+  desired_skills: (posting as PostingRow).desired_skills ?? [],
+  importance_score: (posting as PostingRow).importance_score ?? null,
+  required_level: (posting as PostingRow).required_level ?? null,
+});
 
 export const getCompanyPostings = async (companyId: string): Promise<InternshipPosting[]> => {
   if (!isSupabaseConfigured || !supabase) return getLocalCompanyPostings(companyId);
@@ -51,56 +54,63 @@ export const getCompanyPostings = async (companyId: string): Promise<InternshipP
     .eq('company_id', companyId)
     .order('created_at', { ascending: false });
 
-  if (error) throw error;
-  return (data ?? []).map((row) => toPosting(row as InternshipPosting));
+  if (error) {
+    console.error('Supabase getCompanyPostings error:', error);
+    throw error;
+  }
+
+  return (data ?? []).map((row) => toPosting(row as PostingRow));
 };
 
-export const createCompanyPosting = async (posting: InternshipPosting): Promise<CreateCompanyPostingResult> => {
+export const createCompanyPosting = async (posting: InternshipPosting): Promise<InternshipPosting> => {
   if (!isSupabaseConfigured || !supabase) {
-    return { posting: addCompanyPosting(posting), source: 'localStorage' };
+    return addCompanyPosting(posting);
   }
 
-  try {
-    const rep = await resolveCurrentRepProfile();
-    const insertPayload: InternshipPosting = { ...posting, company_id: rep.company_id, rep_id: rep.rep_id };
+  const payload = mapInsertPayload(posting, {
+    companyId: posting.company_id,
+    representativeId: posting.rep_id,
+  });
 
-    const { data, error } = await supabase.from(TABLE).insert(insertPayload).select('*').single();
-    if (error || !data) throw error ?? new Error('Insert failed');
+  const { data, error } = await supabase.from(TABLE).insert(payload).select('*').single();
 
-    return { posting: toPosting(data as InternshipPosting), source: 'supabase' };
-  } catch (error) {
-    return {
-      posting,
-      source: 'supabase',
-      error: error instanceof Error ? error.message : JSON.stringify(error),
-    };
+  if (error || !data) {
+    console.error('Supabase createCompanyPosting error:', error);
+    throw error ?? new Error('Insert failed');
   }
+
+  return toPosting(data as PostingRow);
 };
 
 export const updateCompanyPosting = async (postingId: string, updates: Partial<InternshipPosting>): Promise<InternshipPosting | null> => {
   if (!isSupabaseConfigured || !supabase) return updateLocalPosting(postingId, updates);
 
   const { data, error } = await supabase.from(TABLE).update(updates).eq('posting_id', postingId).select('*').single();
-  if (error || !data) throw error ?? new Error('Update failed');
-  return toPosting(data as InternshipPosting);
+  if (error || !data) {
+    console.error('Supabase updateCompanyPosting error:', error);
+    throw error ?? new Error('Update failed');
+  }
+  return toPosting(data as PostingRow);
 };
 
 export const duplicateCompanyPosting = async (postingId: string): Promise<InternshipPosting | null> => {
   if (!isSupabaseConfigured || !supabase) return duplicateLocalPosting(postingId);
 
   const { data: source, error: sourceError } = await supabase.from(TABLE).select('*').eq('posting_id', postingId).single();
-  if (sourceError || !source) throw sourceError ?? new Error('Source posting not found');
+  if (sourceError || !source) {
+    console.error('Supabase duplicateCompanyPosting source fetch error:', sourceError);
+    throw sourceError ?? new Error('Source posting not found');
+  }
 
+  const sourcePosting = toPosting(source as PostingRow);
   const duplicate: InternshipPosting = {
-    ...(source as InternshipPosting),
-    posting_id: `post_local_${Date.now()}`,
-    title: `${source.title} (Copy)`,
+    ...sourcePosting,
+    title: `${sourcePosting.title} (Copy)`,
     status: 'draft',
     created_at: new Date().toISOString(),
   };
 
-  const result = await createCompanyPosting(duplicate);
-  return result.error ? null : result.posting;
+  return createCompanyPosting(duplicate);
 };
 
 export const closeCompanyPosting = async (postingId: string): Promise<InternshipPosting | null> => {
