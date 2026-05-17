@@ -87,6 +87,7 @@ export type InternshipPosting = {
   status: "active" | "closed" | "draft" | "pending_review";
   created_at: string;
   deadline: string;
+  company_name?: string | null;
 };
 
 export type PostingSkill = {
