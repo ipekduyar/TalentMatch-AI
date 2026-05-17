@@ -11,6 +11,7 @@ import { InternshipPosting } from '@/lib/types';
 const TABLE = 'internship_postings';
 
 type PostingRow = InternshipPosting & {
+  internship_posting_id?: string;
   representative_id?: string | null;
   monthly_stipend?: number | null;
   required_skills?: string[] | null;
@@ -121,6 +122,7 @@ export const getCurrentCompanyRepresentativeContext = async (): Promise<{
 
 const toPosting = (row: PostingRow): InternshipPosting => ({
   ...(row as InternshipPosting),
+  posting_id: row.internship_posting_id ?? row.posting_id,
   rep_id: row.rep_id ?? row.representative_id ?? '',
   monthly_stipend_try: row.monthly_stipend_try ?? row.monthly_stipend ?? null,
 });
@@ -193,7 +195,7 @@ export const updateCompanyPosting = async (postingId: string, updates: Partial<I
   const { data, error } = await supabase
     .from(TABLE)
     .update(updates)
-    .eq('posting_id', postingId)
+    .eq('internship_posting_id', postingId)
     .eq('company_id', context.company_id)
     .select('*')
     .maybeSingle();
@@ -209,14 +211,18 @@ export const duplicateCompanyPosting = async (postingId: string): Promise<Intern
   if (!isSupabaseConfigured || !supabase) return duplicateLocalPosting(postingId);
 
   const context = await getCurrentCompanyRepresentativeContext();
+  const dbId = postingId;
+  console.log('Duplicating posting using internship_posting_id', dbId);
+
   const { data: source, error: sourceError } = await supabase
     .from(TABLE)
     .select('*')
-    .eq('posting_id', postingId)
+    .eq('internship_posting_id', dbId)
     .eq('company_id', context.company_id)
     .maybeSingle();
+
   if (sourceError || !source) {
-    console.error('posting select/update/duplicate failed', sourceError);
+    console.error('Failed to duplicate posting:', sourceError);
     throw sourceError ?? new Error('Source posting not found');
   }
 
@@ -233,5 +239,14 @@ export const duplicateCompanyPosting = async (postingId: string): Promise<Intern
 
 export const closeCompanyPosting = async (postingId: string): Promise<InternshipPosting | null> => {
   if (!isSupabaseConfigured || !supabase) return closeLocalPosting(postingId);
-  return updateCompanyPosting(postingId, { status: 'closed' });
+
+  const dbId = postingId;
+  console.log('Closing posting using internship_posting_id', dbId);
+
+  try {
+    return await updateCompanyPosting(dbId, { status: 'closed' });
+  } catch (error) {
+    console.error('Failed to close posting:', error);
+    throw error;
+  }
 };
