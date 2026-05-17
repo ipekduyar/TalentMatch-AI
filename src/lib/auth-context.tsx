@@ -96,85 +96,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadSupabaseProfile = useCallback(async (authUserId: string) => {
     if (!supabase) return;
-    console.log('Loading person by auth_user_id', authUserId);
-    console.log('Sending person profile query', authUserId);
-    const { data: person, error } = await withTimeout(
-      supabase.from('persons').select('*').eq('auth_user_id', authUserId).maybeSingle(),
-      'Timed out while loading person profile.'
+    console.log('Loading profile via RPC for auth_user_id', authUserId);
+    const { data, error } = await withTimeout(
+      supabase.rpc('get_my_profile'),
+      'Timed out while loading profile via RPC.'
     );
-    console.log('Person profile query response', { person, error });
+    console.log('Profile RPC response', { data, error });
     if (error) {
-      console.error('person profile not found', error);
       throw error;
     }
-    if (!person) {
-      const personError = new Error('Login succeeded, but no student/company profile was found for this account. Please delete this test account or sign up again with a new email.');
-      console.error('person profile not found', personError);
-      throw personError;
+    if (!data?.person) {
+      throw new Error('Account was created, but profile setup is not ready yet. Please try logging in again.');
     }
-    console.log('Person loaded', person);
 
-    const typedPerson = person as Person;
+    const typedPerson = data.person as Person;
     setUser(typedPerson);
     setRole(typedPerson.role);
-
-    if (typedPerson.role === 'student') {
-      console.log('Sending student profile query', typedPerson.person_id);
-      const { data: studentRow, error: studentError } = await withTimeout(
-        supabase.from('students').select('*').eq('person_id', typedPerson.person_id).maybeSingle(),
-        'Timed out while loading student profile.'
-      );
-      console.log('Student profile query response', { studentRow, studentError });
-      if (studentError) {
-        console.error('student profile load failed', studentError);
-        throw studentError;
-      }
-      if (!studentRow) throw new Error('Login succeeded, but no student/company profile was found for this account. Please delete this test account or sign up again with a new email.');
-      console.log('Student profile loaded', studentRow);
-      setStudent((studentRow as Student) ?? null);
-      setRep(null);
-      setCompany(null);
-      return typedPerson;
-    }
-
-    if (typedPerson.role === 'company_rep') {
-      console.log('Sending company representative profile query', typedPerson.person_id);
-      const { data: repRow, error: repError } = await withTimeout(
-        supabase.from('company_representatives').select('*').eq('person_id', typedPerson.person_id).maybeSingle(),
-        'Timed out while loading company representative profile.'
-      );
-      console.log('Company representative profile query response', { repRow, repError });
-      if (repError) {
-        console.error('company representative profile load failed', repError);
-        throw repError;
-      }
-      if (!repRow) throw new Error('Login succeeded, but no student/company profile was found for this account. Please delete this test account or sign up again with a new email.');
-      const typedRep = (repRow as CompanyRepresentative) ?? null;
-      console.log('Company representative profile loaded', typedRep);
-      setRep(typedRep);
-      if (typedRep) {
-        console.log('Sending company profile query', typedRep.company_id);
-        const { data: companyRow, error: companyError } = await withTimeout(
-          supabase.from('companies').select('*').eq('company_id', typedRep.company_id).maybeSingle(),
-          'Timed out while loading company profile.'
-        );
-        console.log('Company profile query response', { companyRow, companyError });
-        if (companyError) {
-          console.error('company profile load failed', companyError);
-          throw companyError;
-        }
-        if (!companyRow) throw new Error('Login succeeded, but no company profile was found for this user.');
-        setCompany((companyRow as Company) ?? null);
-      } else {
-        setCompany(null);
-      }
-      setStudent(null);
-      return typedPerson;
-    }
-
-    setStudent(null);
-    setRep(null);
-    setCompany(null);
+    setStudent((data.student as Student | null) ?? null);
+    setRep((data.rep as CompanyRepresentative | null) ?? null);
+    setCompany((data.company as Company | null) ?? null);
     return typedPerson;
   }, []);
 
