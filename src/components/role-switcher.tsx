@@ -1,9 +1,12 @@
 import { useCurrentUser } from "@/lib/auth-context";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { Button } from "./ui/button";
 import { User, Shield, Briefcase, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export const RoleSwitcher = () => {
+  if (isSupabaseConfigured) return null;
+
   const { switchRole, user } = useCurrentUser();
   const navigate = useNavigate();
 

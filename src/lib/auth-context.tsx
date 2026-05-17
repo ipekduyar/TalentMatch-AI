@@ -42,6 +42,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = 'talentmatch_user_id';
+const MOCK_AUTH_KEYS = [STORAGE_KEY];
 
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -161,6 +162,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (mounted) setIsLoading(false);
         return;
       }
+
+      MOCK_AUTH_KEYS.forEach((key) => localStorage.removeItem(key));
+      console.log("Supabase mode active: cleared stale mock auth keys and disabled role switcher");
+
       const { data } = await supabase.auth.getSession();
       const authUserId = data.session?.user?.id;
       if (authUserId) {
@@ -206,7 +211,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [users, hydrateMock, loadSupabaseProfile]);
 
   const loginAsDemoUser = useCallback(async (userId: string) => {
-    if (isSupabaseConfigured && supabase) throw new Error('Demo login is only available when Supabase is not configured.');
+    if (isSupabaseConfigured && supabase) {
+      console.log("Mock role switching is disabled in Supabase mode.");
+      return;
+    }
     const found = users.find((p) => p.person_id === userId);
     if (!found) return;
     localStorage.setItem(STORAGE_KEY, userId);
@@ -243,6 +251,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [hydrateMock]);
 
   const switchRole = useCallback(async (userId?: string) => {
+    if (isSupabaseConfigured && supabase) {
+      console.log("Mock role switching is disabled in Supabase mode.");
+      return;
+    }
     if (!userId) return logout();
     return loginAsDemoUser(userId);
   }, [loginAsDemoUser, logout]);
