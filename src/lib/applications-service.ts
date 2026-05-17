@@ -49,7 +49,7 @@ export const getPostingById = async (postingId: string): Promise<InternshipPosti
     .select(`
       internship_posting_id,
       company_id,
-      rep_id,
+      representative_id,
       title,
       description,
       location,
@@ -59,7 +59,7 @@ export const getPostingById = async (postingId: string): Promise<InternshipPosti
       start_date,
       duration_weeks,
       is_paid,
-      monthly_stipend_try,
+      monthly_stipend,
       is_remote,
       status,
       created_at,
@@ -69,14 +69,17 @@ export const getPostingById = async (postingId: string): Promise<InternshipPosti
     .eq("internship_posting_id", postingId)
     .single();
 
-  if (error || !data) throw new Error("Posting not found.");
+  if (error || !data) {
+    if (error) console.error("Failed to load posting by id", { postingId, error });
+    throw new Error("Posting not found.");
+  }
 
   const companyRelation = Array.isArray(data.companies) ? data.companies[0] : data.companies;
 
   return {
     posting_id: data.internship_posting_id,
     company_id: data.company_id,
-    rep_id: data.rep_id,
+    rep_id: data.representative_id ?? null,
     title: data.title,
     description: data.description,
     location: data.location,
@@ -86,7 +89,7 @@ export const getPostingById = async (postingId: string): Promise<InternshipPosti
     start_date: data.start_date,
     duration_weeks: data.duration_weeks,
     is_paid: data.is_paid,
-    monthly_stipend_try: data.monthly_stipend_try,
+    monthly_stipend_try: data.monthly_stipend ?? null,
     is_remote: data.is_remote,
     status: data.status,
     created_at: data.created_at,
