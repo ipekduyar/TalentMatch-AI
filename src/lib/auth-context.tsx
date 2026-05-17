@@ -282,7 +282,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem(STORAGE_KEY);
       isSigningUpRef.current = true;
       try {
-        const { data: auth, error: authError } = await supabase.auth.signUp({ email: data.email, password: data.password });
+        const { data: auth, error: authError } = await supabase.auth.signUp({
+          email: data.email,
+          password: data.password,
+          options: {
+            data: {
+              first_name: data.firstName,
+              last_name: data.lastName,
+              role,
+              kvkk_consent: data.kvkkConsent,
+              terms_consent: data.termsConsent ?? false,
+              university: data.university ?? null,
+              department: data.department ?? null,
+              student_number: data.studentNumber ?? null,
+              academic_year: data.academicYear ?? null,
+              gpa: data.gpa ?? null,
+              career_goal: data.careerGoal ?? null,
+              company_name: data.companyName ?? null,
+              company_industry: data.companyIndustry ?? null,
+              company_size: data.companySize ?? null,
+              company_website: data.companyWebsite ?? null,
+              company_location: data.companyLocation ?? null,
+              representative_job_title: data.representativeJobTitle ?? null,
+            },
+          },
+        });
         if (authError) {
           console.error('Auth signup failed', authError);
           throw authError;
@@ -293,119 +317,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Supabase signUp succeeded but no auth user id was returned.');
         }
         console.log('Auth signup ok', auth.user?.id);
-        console.log('Continuing signup profile creation without manual setSession');
 
-        const withTimeout = async <T,>(promise: Promise<T>, timeoutMessage: string): Promise<T> => {
-          return Promise.race([
-            promise,
-            new Promise<T>((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), 15000)),
-          ]) as Promise<T>;
-        };
+        const loadSupabaseProfileWithRetry = async (id: string): Promise<Person> => {
+          const maxAttempts = 5;
+          const waitMs = 300;
 
-        const nowIso = new Date().toISOString();
-        const personPayload = {
-          auth_user_id: authUserId,
-          first_name: data.firstName,
-          last_name: data.lastName,
-          email: data.email,
-          role,
-          kvkk_consent: data.kvkkConsent,
-          terms_consent: data.termsConsent ?? false,
-          consent_given_at: nowIso,
-        };
-        console.log('Creating person profile payload', personPayload);
-        console.log('Sending person insert request');
-        const { data: personRow, error } = await withTimeout(
-          supabase.from('persons').insert(personPayload).select('*').single(),
-          'Timed out while creating person profile.',
-        );
-        console.log('Person insert response', { personRow, error });
-        if (error || !personRow) {
-          const personError = error ?? new Error('Unable to create person profile.');
-          console.error('Person insert failed', personError);
-          throw personError;
-        }
-        const person = personRow as Person;
-        console.log('Person created', person);
-
-        if (role === 'student') {
-          const studentPayload = {
-            person_id: person.person_id,
-            university: data.university,
-            department: data.department,
-            student_number: data.studentNumber,
-            gpa: data.gpa ?? null,
-            academic_year: data.academicYear,
-            career_goal: data.careerGoal ?? null,
-          };
-          console.log('Creating student profile payload', studentPayload);
-          console.log('Sending student insert request');
-          const { data: studentRow, error } = await withTimeout(
-            supabase.from('students').insert(studentPayload).select('*').single(),
-            'Timed out while creating student profile.',
-          );
-          console.log('Student insert response', { studentRow, error });
-          if (error || !studentRow) {
-            const studentError = error ?? new Error('Unable to create student profile.');
-            console.error('Student insert failed', studentError);
-            throw studentError;
-          }
-          const student = studentRow as Student;
-          console.log('Student created', student);
-        } else {
-          const companyPayload = {
-            name: data.companyName,
-            industry: data.companyIndustry,
-            size: data.companySize ?? 'sme',
-            website: data.companyWebsite ?? null,
-            location: data.companyLocation ?? null,
-          };
-          console.log('Creating company payload', companyPayload);
-
-          let company: Company | null = null;
-          const { data: existingCompany, error: findCompanyError } = await supabase.from('companies').select('*').ilike('name', (data.companyName || '').trim()).maybeSingle();
-          if (findCompanyError) {
-            console.error('company find failed', findCompanyError);
-            throw findCompanyError;
-          }
-
-          if (existingCompany) {
-            company = existingCompany as Company;
-          } else {
-            const { data: createdCompany, error } = await supabase.from('companies').insert(companyPayload).select('*').single();
-            if (error || !createdCompany) {
-              console.error('company insert failed', error);
-              throw error ?? new Error('Unable to create company profile.');
+          for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+              return await loadSupabaseProfile(id);
+            } catch (error) {
+              if (attempt === maxAttempts) {
+                console.error('Profile hydration did not complete after signup retries', error);
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, waitMs));
             }
-            company = createdCompany as Company;
           }
 
-          console.log('Company created/found', company);
+          throw new Error('Account was created, but profile setup is not ready yet. Please try logging in again.');
+        };
 
-          const repPayload = {
-            person_id: person.person_id,
-            company_id: company.company_id,
-            job_title: data.representativeJobTitle ?? null,
-          };
-          console.log('Creating company representative payload', repPayload);
-          console.log('Sending company representative insert request');
-          const { data: repRow, error } = await withTimeout(
-            supabase.from('company_representatives').insert(repPayload).select('*').single(),
-            'Timed out while creating company representative profile.',
-          );
-          console.log('Company representative insert response', { repRow, error });
-          if (error || !repRow) {
-            const repError = error ?? new Error('Unable to create company representative profile.');
-            console.error('Company representative insert failed', repError);
-            throw repError;
-          }
-          const rep = repRow as CompanyRepresentative;
-          console.log('Representative created', rep);
+        const hydratedPerson = await loadSupabaseProfileWithRetry(authUserId);
+        if (!hydratedPerson) {
+          throw new Error('Account was created, but profile setup is not ready yet. Please try logging in again.');
         }
-
-        console.log('Signup profile creation complete; hydrating profile');
-        const hydratedPerson = await loadSupabaseProfile(authUserId);
-        return hydratedPerson ?? (personRow as Person);
+        return hydratedPerson;
       } catch (profileError) {
         const message = formatErrorMessage(profileError);
         console.error('Signup profile setup failed after auth user creation', profileError);
