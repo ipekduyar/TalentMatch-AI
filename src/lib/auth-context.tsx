@@ -43,6 +43,20 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = 'talentmatch_user_id';
+const LEGACY_MOCK_AUTH_KEYS = [
+  STORAGE_KEY,
+  'talentmatch_mock_user_id',
+  'talentmatch_mock_role',
+  'talentmatch_demo_user_id',
+  'talentmatch_role_switch_user_id',
+  'talentmatch_role_switcher_user_id',
+] as const;
+
+const cleanupLegacyAuthState = () => {
+  LEGACY_MOCK_AUTH_KEYS.forEach((key) => localStorage.removeItem(key));
+  console.log('Legacy mock auth state cleaned');
+};
+
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMessage: string, ms = 10000): Promise<T> => {
   return Promise.race([
     promise,
@@ -149,8 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      localStorage.removeItem(STORAGE_KEY);
-      console.log("Supabase mode active: cleared stale mock auth keys and disabled role switcher");
+      cleanupLegacyAuthState();
 
       const { data } = await supabase.auth.getSession();
       const authUserId = data.session?.user?.id;
@@ -251,6 +264,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = useCallback(async () => {
     if (isSupabaseConfigured && supabase) {
       await supabase.auth.signOut();
+      localStorage.removeItem(STORAGE_KEY);
       setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
       return;
     }
