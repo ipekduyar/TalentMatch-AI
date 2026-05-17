@@ -293,14 +293,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Supabase signUp succeeded but no auth user id was returned.');
         }
         console.log('Auth signup ok', auth.user?.id);
-
-        if (auth.session?.access_token && auth.session?.refresh_token) {
-          await supabase.auth.setSession({
-            access_token: auth.session.access_token,
-            refresh_token: auth.session.refresh_token,
-          });
-          console.log('Signup session explicitly set before profile inserts');
-        }
+        console.log('Continuing signup profile creation without manual setSession');
 
         const withTimeout = async <T,>(promise: Promise<T>, timeoutMessage: string): Promise<T> => {
           return Promise.race([
