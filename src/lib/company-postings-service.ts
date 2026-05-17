@@ -147,8 +147,8 @@ const mapInsertPayload = (posting: InternshipPosting, overrides: { companyId: st
   required_level: (posting as PostingRow).required_level ?? null,
 });
 
-export const getCompanyPostings = async (companyId: string): Promise<InternshipPosting[]> => {
-  if (!isSupabaseConfigured || !supabase) return getLocalCompanyPostings(companyId);
+export const getCompanyPostings = async (companyId?: string): Promise<InternshipPosting[]> => {
+  if (!isSupabaseConfigured || !supabase) return getLocalCompanyPostings(companyId ?? '');
 
   const context = await getCurrentCompanyRepresentativeContext();
   const { data, error } = await supabase

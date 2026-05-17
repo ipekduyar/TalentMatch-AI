@@ -17,26 +17,36 @@ import { InternshipPosting } from "@/lib/types";
 type PostingState = InternshipPosting;
 
 export const CompanyPostingsPage = () => {
-  const { company } = useCurrentUser();
+  const { company, currentUser } = useCurrentUser();
   const [postings, setPostings] = useState<PostingState[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const getErrorMessage = (error: unknown) => {
     if (typeof error === "object" && error !== null && "message" in error) return String((error as { message: string }).message);
     return String(error);
   };
 
-  useEffect(() => {
-    if (!company?.company_id) {
-      setPostings([]);
+  const loadPostings = async () => {
+    if (!currentUser) {
+      setIsLoading(false);
       return;
     }
-    void getCompanyPostings(company.company_id)
-      .then(setPostings)
-      .catch((error) => {
-        console.error("Supabase get postings error:", error);
-        toast.error(`Failed to load postings: ${getErrorMessage(error)}`);
-      });
-  }, [company?.company_id]);
+
+    setIsLoading(true);
+    try {
+      const nextPostings = await getCompanyPostings();
+      setPostings(nextPostings);
+    } catch (error) {
+      console.error("Failed to load company postings", error);
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadPostings();
+  }, [currentUser?.id]);
 
   const companyPostings = useMemo(
     () => postings.filter((posting) => posting.company_id === company?.company_id),
@@ -72,7 +82,7 @@ export const CompanyPostingsPage = () => {
         return;
       }
 
-      setPostings((prev) => prev.map((posting) => (posting.posting_id === postingId ? updated : posting)));
+      await loadPostings();
       toast.success("Posting closed successfully.");
     } catch (error) {
       console.error("Supabase close posting error:", error);
@@ -89,7 +99,7 @@ export const CompanyPostingsPage = () => {
         return;
       }
 
-      setPostings((prev) => prev.map((posting) => (posting.posting_id === postingId ? updated : posting)));
+      await loadPostings();
       toast.success("Posting activated successfully.");
     } catch (error) {
       console.error("Supabase activate posting error:", error);
@@ -105,7 +115,7 @@ export const CompanyPostingsPage = () => {
         return;
       }
 
-      setPostings((prev) => [duplicate, ...prev]);
+      await loadPostings();
       toast.success("Posting duplicated as draft.");
     } catch (error) {
       console.error("Supabase duplicate posting error:", error);
@@ -125,6 +135,9 @@ export const CompanyPostingsPage = () => {
         <Button asChild className="bg-blue-600 hover:bg-blue-700 text-white">
           <Link to="/company/postings/new">Create Posting</Link>
         </Button>
+        <Button variant="outline" onClick={() => void loadPostings()} disabled={isLoading}>
+          {isLoading ? "Refreshing..." : "Refresh"}
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -135,7 +148,12 @@ export const CompanyPostingsPage = () => {
       </div>
 
       <div className="space-y-4">
-        {companyPostings.map((posting) => {
+        {isLoading && (
+          <Card className="bg-white rounded-xl">
+            <CardContent className="py-10 text-center text-slate-600">Loading postings...</CardContent>
+          </Card>
+        )}
+        {!isLoading && companyPostings.map((posting) => {
           const postingApplications = getApplicationsForPosting(posting.posting_id);
           const postingAverageScore = postingApplications.length
             ? Math.round(postingApplications.reduce((sum, application) => sum + application.match_score, 0) / postingApplications.length)
@@ -175,7 +193,7 @@ export const CompanyPostingsPage = () => {
             </Card>
           );
         })}
-        {companyPostings.length === 0 && (
+        {!isLoading && companyPostings.length === 0 && (
           <Card className="bg-white rounded-xl">
             <CardContent className="py-10 text-center text-slate-600">No postings found for your company profile.</CardContent>
           </Card>
