@@ -195,8 +195,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: auth, error: authError } = await supabase.auth.signUp({ email: data.email, password: data.password });
       if (authError) throw authError;
       const authUserId = auth.user?.id;
+      const authSession = auth.session;
       if (!authUserId) throw new Error('Supabase signUp succeeded but no auth user id was returned.');
+      console.log('Auth signup ok', authUserId);
+      if (!authSession) console.log('Auth signup returned no session (email confirmation may be required)');
 
+      console.log('Creating person profile');
       const nowIso = new Date().toISOString();
       const { data: personRow, error: personError } = await supabase.from('persons').insert({
         auth_user_id: authUserId,
@@ -206,16 +210,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: data.type === 'company' ? 'company_rep' : 'student',
         kvkk_consent: data.kvkkConsent,
         terms_consent: data.termsConsent ?? false,
-        consent_given_at: data.kvkkConsent || data.termsConsent ? nowIso : null,
+        consent_given_at: nowIso,
       }).select('*').single();
       if (personError || !personRow) {
-        console.error('Person insert failed during signup:', personError);
-        throw personError ?? new Error('Unable to create person');
+        console.error('Person insert failed during signup', personError);
+        throw new Error(personError?.message ?? 'Unable to create person');
       }
       const person = personRow as Person;
+      console.log('Person created', person);
 
       if (data.type === 'student') {
-        const { error } = await supabase.from('students').upsert({
+        console.log('Creating student profile');
+        const { error } = await supabase.from('students').insert({
           person_id: person.person_id,
           university: data.university,
           department: data.department,
@@ -223,9 +229,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           gpa: data.gpa ?? null,
           academic_year: data.academicYear,
           career_goal: data.careerGoal ?? null,
-        }, { onConflict: 'person_id' });
+        }).select('*').single();
         if (error) { console.error('Student profile insert failed:', error); throw error; }
       } else {
+        console.log('Creating company representative profile');
         let companyId: string | null = null;
         const { data: existingCompany } = await supabase.from('companies').select('company_id').ilike('name', (data.companyName || '').trim()).maybeSingle();
         companyId = existingCompany?.company_id ?? null;
@@ -241,14 +248,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           companyId = createdCompany.company_id;
         }
 
-        const { error: repError } = await supabase.from('company_representatives').upsert({
+        const { error: repError } = await supabase.from('company_representatives').insert({
           person_id: person.person_id,
           company_id: companyId,
           job_title: data.representativeJobTitle ?? null,
-        }, { onConflict: 'person_id' });
+        }).select('*').single();
         if (repError) { console.error('Company representative insert failed:', repError); throw repError; }
       }
 
+      console.log('Signup profile creation completed');
       await loadSupabaseProfile(authUserId);
       return person;
     }
