@@ -170,7 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const authUserId = data.session?.user?.id;
       if (authUserId) {
         if (isSigningUpRef.current) {
-          console.log('Signup in progress: skipping auth-state hydration');
+          console.log('Signup in progress: ignoring auth-state event');
         } else {
           try {
             await loadSupabaseProfile(authUserId);
@@ -196,7 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       if (isSigningUpRef.current) {
-        console.log('Signup in progress: skipping auth-state hydration');
+        console.log('Signup in progress: ignoring auth-state event');
         return;
       }
       try {
@@ -279,22 +279,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!supabase || !data.password) throw new Error('Supabase is configured but client is unavailable.');
 
       const role: UserRole = data.type === 'company' ? 'company_rep' : 'student';
+      localStorage.removeItem(STORAGE_KEY);
       isSigningUpRef.current = true;
-      const { data: auth, error } = await supabase.auth.signUp({ email: data.email, password: data.password });
-      if (error) {
-        isSigningUpRef.current = false;
-        console.error('Auth signup failed', error);
-        throw error;
-      }
-
-      const authUserId = auth.user?.id;
-      if (!authUserId) {
-        isSigningUpRef.current = false;
-        throw new Error('Supabase signUp succeeded but no auth user id was returned.');
-      }
-      console.log('Auth signup ok', auth.user?.id);
-
       try {
+        const { data: auth, error: authError } = await supabase.auth.signUp({ email: data.email, password: data.password });
+        if (authError) {
+          console.error('Auth signup failed', authError);
+          throw authError;
+        }
+
+        const authUserId = auth.user?.id;
+        if (!authUserId) {
+          throw new Error('Supabase signUp succeeded but no auth user id was returned.');
+        }
+        console.log('Auth signup ok', auth.user?.id);
+
+        if (auth.session?.access_token && auth.session?.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: auth.session.access_token,
+            refresh_token: auth.session.refresh_token,
+          });
+          console.log('Signup session explicitly set before profile inserts');
+        }
+
+        const withTimeout = async <T,>(promise: Promise<T>, timeoutMessage: string): Promise<T> => {
+          return Promise.race([
+            promise,
+            new Promise<T>((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), 15000)),
+          ]) as Promise<T>;
+        };
+
         const nowIso = new Date().toISOString();
         const personPayload = {
           auth_user_id: authUserId,
@@ -307,10 +321,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           consent_given_at: nowIso,
         };
         console.log('Creating person profile payload', personPayload);
-        const { data: personRow, error } = await supabase.from('persons').insert(personPayload).select('*').single();
+        console.log('Sending person insert request');
+        const { data: personRow, error } = await withTimeout(
+          supabase.from('persons').insert(personPayload).select('*').single(),
+          'Timed out while creating person profile.',
+        );
+        console.log('Person insert response', { personRow, error });
         if (error || !personRow) {
-          console.error('Person insert failed', error);
-          throw error ?? new Error('Unable to create person profile.');
+          const personError = error ?? new Error('Unable to create person profile.');
+          console.error('Person insert failed', personError);
+          throw personError;
         }
         const person = personRow as Person;
         console.log('Person created', person);
@@ -326,10 +346,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             career_goal: data.careerGoal ?? null,
           };
           console.log('Creating student profile payload', studentPayload);
-          const { data: studentRow, error } = await supabase.from('students').insert(studentPayload).select('*').single();
+          console.log('Sending student insert request');
+          const { data: studentRow, error } = await withTimeout(
+            supabase.from('students').insert(studentPayload).select('*').single(),
+            'Timed out while creating student profile.',
+          );
+          console.log('Student insert response', { studentRow, error });
           if (error || !studentRow) {
-            console.error('Student insert failed', error);
-            throw error ?? new Error('Unable to create student profile.');
+            const studentError = error ?? new Error('Unable to create student profile.');
+            console.error('Student insert failed', studentError);
+            throw studentError;
           }
           const student = studentRow as Student;
           console.log('Student created', student);
@@ -369,10 +395,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             job_title: data.representativeJobTitle ?? null,
           };
           console.log('Creating company representative payload', repPayload);
-          const { data: repRow, error } = await supabase.from('company_representatives').insert(repPayload).select('*').single();
+          console.log('Sending company representative insert request');
+          const { data: repRow, error } = await withTimeout(
+            supabase.from('company_representatives').insert(repPayload).select('*').single(),
+            'Timed out while creating company representative profile.',
+          );
+          console.log('Company representative insert response', { repRow, error });
           if (error || !repRow) {
-            console.error('Company representative insert failed', error);
-            throw error ?? new Error('Unable to create company representative profile.');
+            const repError = error ?? new Error('Unable to create company representative profile.');
+            console.error('Company representative insert failed', repError);
+            throw repError;
           }
           const rep = repRow as CompanyRepresentative;
           console.log('Representative created', rep);
@@ -380,17 +412,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         console.log('Signup profile creation complete; hydrating profile');
         const hydratedPerson = await loadSupabaseProfile(authUserId);
-        isSigningUpRef.current = false;
-        return hydratedPerson ?? person;
+        return hydratedPerson ?? (personRow as Person);
       } catch (profileError) {
-        isSigningUpRef.current = false;
+        const message = formatErrorMessage(profileError);
         console.error('Signup profile setup failed after auth user creation', profileError);
         try {
           await supabase.auth.signOut({ scope: 'local' });
         } catch (signOutError) {
           console.error('Signup cleanup signOut failed', signOutError);
         }
-        throw new Error('Account was created, but profile setup failed. Please delete this test user in Supabase Authentication or sign up again with a new email.');
+        throw new Error(message);
+      } finally {
+        isSigningUpRef.current = false;
       }
     }
 
