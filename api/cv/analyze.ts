@@ -105,19 +105,63 @@ export default async function handler(req: any, res: any) {
 
   let studentId = "";
 
-  const markFailure = async (message: string) => {
-    if (studentId) {
-      await supabase.from("cv_analysis_reports").upsert(
-        {
-          document_id: documentId,
-          student_id: studentId,
-          analysis_status: "failed",
-          failure_reason: message,
-        },
-        { onConflict: "document_id" }
-      );
+  const persistCvAnalysisReport = async (reportPayload: Record<string, unknown>) => {
+    const { data: existingReport, error: reportLookupError } = await supabase
+      .from("cv_analysis_reports")
+      .select("analysis_id")
+      .eq("document_id", documentId)
+      .eq("student_id", studentId)
+      .maybeSingle();
 
-      await supabase.from("student_documents").update({ upload_status: "failed" }).eq("document_id", documentId);
+    if (reportLookupError) {
+      throw new Error(reportLookupError.message);
+    }
+
+    if (existingReport?.analysis_id) {
+      const { error: updateError } = await supabase
+        .from("cv_analysis_reports")
+        .update(reportPayload)
+        .eq("analysis_id", existingReport.analysis_id);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      return;
+    }
+
+    const { error: insertError } = await supabase.from("cv_analysis_reports").insert(reportPayload);
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
+  };
+
+  const markFailure = async (message: string) => {
+    if (!studentId) {
+      return;
+    }
+
+    const failurePayload = {
+      document_id: documentId,
+      student_id: studentId,
+      analysis_status: "failed",
+      error_message: message,
+    };
+
+    try {
+      await persistCvAnalysisReport(failurePayload);
+
+      const { error: documentUpdateError } = await supabase
+        .from("student_documents")
+        .update({ upload_status: "failed" })
+        .eq("document_id", documentId)
+        .eq("student_id", studentId);
+
+      if (documentUpdateError) {
+        throw new Error(documentUpdateError.message);
+      }
+    } catch (persistError) {
+      console.error("Failed to persist CV analysis failure state", persistError);
     }
   };
 
@@ -208,10 +252,15 @@ export default async function handler(req: any, res: any) {
       improvement_suggestions: parsed.improvement_suggestions,
       overall_score: parsed.overall_score,
       analysis_status: "completed",
+      error_message: null,
     };
 
-    const { error: reportError } = await supabase.from("cv_analysis_reports").upsert(reportPayload, { onConflict: "document_id" });
-    if (reportError) throw new Error(reportError.message);
+    try {
+      await persistCvAnalysisReport(reportPayload);
+    } catch (persistError) {
+      console.error("Failed to persist CV analysis success state", persistError);
+      throw persistError;
+    }
 
     const { error: docUpdateError } = await supabase
       .from("student_documents")
@@ -224,7 +273,7 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json(reportPayload);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("CV analyze error:", message);
+    console.error("CV analyze failed", error);
     await markFailure(message);
     return res.status(500).json({ error: message });
   }
