@@ -7,13 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import {
-  MOCK_PARSED_SKILLS,
-  clearMockCvMetadata,
-  formatCvFileSize,
-  getMockCvMetadata,
-  saveMockCvMetadata,
-} from "@/lib/mock-cv-storage";
+import { MOCK_PARSED_SKILLS, formatCvFileSize } from "@/lib/mock-cv-storage";
+import { getStoredCvMetadata, removeStoredCvMetadata, uploadStudentCv, type CvUploadStatus } from "@/lib/cv-upload-service";
 import { 
   User, 
   Mail, 
@@ -36,30 +31,40 @@ export const ProfilePage = () => {
     toast.success("Profile updated successfully!");
   };
 
-  const [cvMetadata, setCvMetadata] = useState(() => getMockCvMetadata());
+  const [cvMetadata, setCvMetadata] = useState(() => getStoredCvMetadata());
+  const [uploadStatus, setUploadStatus] = useState<CvUploadStatus>(cvMetadata ? "uploaded" : "idle");
   const uploadTimestamp = useMemo(
     () => (cvMetadata ? new Date(cvMetadata.uploadedAtIso).toLocaleString() : ""),
     [cvMetadata]
   );
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const metadata = {
-      fileName: file.name,
-      fileSizeBytes: file.size,
-      uploadedAtIso: new Date().toISOString(),
-    };
+    setUploadStatus("uploading");
 
-    saveMockCvMetadata(metadata);
-    setCvMetadata(metadata);
-    toast.success("CV uploaded successfully");
-    event.target.value = "";
+    try {
+      const result = await uploadStudentCv(file);
+      setCvMetadata({
+        fileName: result.fileName,
+        fileSizeBytes: result.fileSizeBytes,
+        uploadedAtIso: result.uploadedAtIso,
+      });
+      setUploadStatus("uploaded");
+      toast.success("CV uploaded successfully");
+    } catch (error) {
+      setUploadStatus("failed");
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(message);
+    } finally {
+      event.target.value = "";
+    }
   };
 
   const handleRemoveCv = () => {
-    clearMockCvMetadata();
+    removeStoredCvMetadata();
+    setUploadStatus("idle");
     setCvMetadata(null);
     toast.success("CV removed");
   };
@@ -194,6 +199,7 @@ export const ProfilePage = () => {
                     <p><span className="font-bold">File:</span> {cvMetadata.fileName}</p>
                     <p><span className="font-bold">Size:</span> {formatCvFileSize(cvMetadata.fileSizeBytes)}</p>
                     <p><span className="font-bold">Uploaded:</span> {uploadTimestamp}</p>
+                    <p><span className="font-bold">Status:</span> {uploadStatus}</p>
                     <div>
                       <p className="font-bold mb-1">Parsed skills:</p>
                       <div className="flex flex-wrap gap-2">
