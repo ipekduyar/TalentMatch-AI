@@ -40,8 +40,9 @@ export const SignupPage = () => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
     if (!form.kvkkConsent || !form.termsConsent) {
       toast.error('Please accept KVKK and Terms consents to continue.');
       return;
@@ -62,7 +63,7 @@ export const SignupPage = () => {
         return;
       }
 
-      signupMockUser({
+      await signupMockUser({
         firstName: form.firstName,
         lastName: form.lastName,
         email: form.email,
@@ -74,6 +75,8 @@ export const SignupPage = () => {
         companyWebsite: form.companyWebsite,
         companyLocation: form.companyLocation,
         representativeJobTitle: form.representativeJobTitle,
+        password: form.password,
+        termsConsent: form.termsConsent,
       });
       toast.success('Company representative account created. Verification pending.');
       navigate('/company/dashboard');
@@ -88,7 +91,7 @@ export const SignupPage = () => {
       return;
     }
 
-    signupMockUser({
+    await signupMockUser({
       firstName: form.firstName,
       lastName: form.lastName,
       email: form.email,
@@ -100,10 +103,15 @@ export const SignupPage = () => {
       academicYear: Number(form.academicYear) as 1 | 2 | 3 | 4 | 5,
       gpa: Number(form.gpa),
       careerGoal: form.careerGoal,
+      password: form.password,
+      termsConsent: form.termsConsent,
     });
 
     toast.success('Student account created successfully.');
     navigate('/onboarding');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Signup failed');
+    }
   };
 
   return (
