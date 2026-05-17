@@ -42,6 +42,12 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = 'talentmatch_user_id';
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMessage: string, ms = 10000): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), ms)),
+  ]) as Promise<T>;
+};
 
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -91,7 +97,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadSupabaseProfile = useCallback(async (authUserId: string) => {
     if (!supabase) return;
     console.log('Loading person by auth_user_id', authUserId);
-    const { data: person, error } = await supabase.from('persons').select('*').eq('auth_user_id', authUserId).maybeSingle();
+    console.log('Sending person profile query', authUserId);
+    const { data: person, error } = await withTimeout(
+      supabase.from('persons').select('*').eq('auth_user_id', authUserId).maybeSingle(),
+      'Timed out while loading person profile.'
+    );
+    console.log('Person profile query response', { person, error });
     if (error) {
       console.error('person profile not found', error);
       throw error;
@@ -108,7 +119,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRole(typedPerson.role);
 
     if (typedPerson.role === 'student') {
-      const { data: studentRow, error: studentError } = await supabase.from('students').select('*').eq('person_id', typedPerson.person_id).maybeSingle();
+      console.log('Sending student profile query', typedPerson.person_id);
+      const { data: studentRow, error: studentError } = await withTimeout(
+        supabase.from('students').select('*').eq('person_id', typedPerson.person_id).maybeSingle(),
+        'Timed out while loading student profile.'
+      );
+      console.log('Student profile query response', { studentRow, studentError });
       if (studentError) {
         console.error('student profile load failed', studentError);
         throw studentError;
@@ -122,7 +138,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (typedPerson.role === 'company_rep') {
-      const { data: repRow, error: repError } = await supabase.from('company_representatives').select('*').eq('person_id', typedPerson.person_id).maybeSingle();
+      console.log('Sending company representative profile query', typedPerson.person_id);
+      const { data: repRow, error: repError } = await withTimeout(
+        supabase.from('company_representatives').select('*').eq('person_id', typedPerson.person_id).maybeSingle(),
+        'Timed out while loading company representative profile.'
+      );
+      console.log('Company representative profile query response', { repRow, repError });
       if (repError) {
         console.error('company representative profile load failed', repError);
         throw repError;
@@ -132,7 +153,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Company representative profile loaded', typedRep);
       setRep(typedRep);
       if (typedRep) {
-        const { data: companyRow, error: companyError } = await supabase.from('companies').select('*').eq('company_id', typedRep.company_id).maybeSingle();
+        console.log('Sending company profile query', typedRep.company_id);
+        const { data: companyRow, error: companyError } = await withTimeout(
+          supabase.from('companies').select('*').eq('company_id', typedRep.company_id).maybeSingle(),
+          'Timed out while loading company profile.'
+        );
+        console.log('Company profile query response', { companyRow, companyError });
         if (companyError) {
           console.error('company profile load failed', companyError);
           throw companyError;
@@ -169,7 +195,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data } = await supabase.auth.getSession();
       const authUserId = data.session?.user?.id;
       if (authUserId) {
-        if (isSigningUpRef.current) {
+        if (isLoggingInRef.current) {
+          console.log('Login in progress: skipping bootstrap hydration');
+        } else if (isSigningUpRef.current) {
           console.log('Signup in progress: ignoring auth-state event');
         } else {
           try {
@@ -187,16 +215,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!isSupabaseConfigured || !supabase) return;
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (isLoggingInRef.current) {
-        console.log("Login in progress: skipping auth-state hydration");
+      if (isLoggingInRef.current || isSigningUpRef.current) {
+        console.log("Explicit auth flow in progress: skipping auth-state hydration");
         return;
       }
       if (!session?.user?.id) {
         setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
-        return;
-      }
-      if (isSigningUpRef.current) {
-        console.log('Signup in progress: ignoring auth-state event');
         return;
       }
       try {
@@ -239,7 +263,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const authUserId = data.user?.id;
       console.log('Login auth ok', authUserId);
       if (!authUserId) throw new Error('Login succeeded but no auth user id was returned.');
-      const hydratedPerson = await loadSupabaseProfile(authUserId);
+      const hydratedPerson = await withTimeout(
+        loadSupabaseProfile(authUserId),
+        'Timed out while hydrating login profile.'
+      );
       console.log("Login profile hydration complete");
       isLoggingInRef.current = false;
       return hydratedPerson;
