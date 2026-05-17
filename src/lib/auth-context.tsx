@@ -33,6 +33,7 @@ interface AuthContextType {
   company: Company | null;
   role: UserRole | null;
   loginAsDemoUser: (userId: string) => Promise<void>;
+  loginWithPassword: (email: string, password: string) => Promise<Person>;
   signupMockUser: (data: SignupMockData) => Promise<Person>;
   logout: () => Promise<void>;
   switchRole: (userId?: string) => Promise<void>;
@@ -42,12 +43,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = 'talentmatch_user_id';
 
-type ConsentRecord = {
-  kvkk_consent: boolean;
-  kvkk_consent_at: string | null;
-  terms_consent?: boolean;
-  terms_consent_at?: string | null;
-};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<Person[]>(PERSONS);
@@ -120,21 +115,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return typedPerson;
   }, []);
 
-  const upsertPersonWithConsent = async (payload: Record<string, unknown>, consent: ConsentRecord) => {
-    if (!supabase) throw new Error('Supabase not configured');
-    const withTerms = { ...payload, ...consent };
-    const attempt = await supabase.from('persons').upsert(withTerms, { onConflict: 'auth_user_id' }).select('*').single();
-    if (!attempt.error) return attempt;
-    const message = attempt.error.message.toLowerCase();
-    if (message.includes('terms_consent')) {
-      return await supabase
-        .from('persons')
-        .upsert({ ...payload, kvkk_consent: consent.kvkk_consent, kvkk_consent_at: consent.kvkk_consent_at }, { onConflict: 'auth_user_id' })
-        .select('*')
-        .single();
-    }
-    return attempt;
-  };
 
   useEffect(() => {
     let mounted = true;
@@ -170,16 +150,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [users, hydrateMock, loadSupabaseProfile]);
 
   const loginAsDemoUser = useCallback(async (userId: string) => {
-    if (isSupabaseConfigured && supabase) {
-      const loginTarget = users.find((p) => p.person_id === userId);
-      if (loginTarget) hydrateMock(loginTarget);
-      return;
-    }
+    if (isSupabaseConfigured && supabase) throw new Error('Demo login is only available when Supabase is not configured.');
     const found = users.find((p) => p.person_id === userId);
     if (!found) return;
     localStorage.setItem(STORAGE_KEY, userId);
     hydrateMock(found);
   }, [users, hydrateMock]);
+
+
+  const loginWithPassword = useCallback(async (email: string, password: string): Promise<Person> => {
+    if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      console.error('Supabase login failed:', error);
+      throw error;
+    }
+    const authUserId = data.user?.id;
+    if (!authUserId) throw new Error('Login succeeded but no auth user id was returned.');
+    try {
+      return await loadSupabaseProfile(authUserId);
+    } catch (profileError) {
+      console.error('Profile loading failed after login:', profileError);
+      throw profileError instanceof Error ? profileError : new Error('Failed to load profile after login.');
+    }
+  }, [loadSupabaseProfile]);
 
   const logout = useCallback(async () => {
     if (isSupabaseConfigured && supabase) {
@@ -204,22 +198,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!authUserId) throw new Error('Supabase signUp succeeded but no auth user id was returned.');
 
       const nowIso = new Date().toISOString();
-      const consent: ConsentRecord = {
-        kvkk_consent: data.kvkkConsent,
-        kvkk_consent_at: data.kvkkConsent ? nowIso : null,
-        terms_consent: data.termsConsent ?? false,
-        terms_consent_at: data.termsConsent ? nowIso : null,
-      };
-
-      const { data: personRow, error: personError } = await upsertPersonWithConsent({
+      const { data: personRow, error: personError } = await supabase.from('persons').insert({
         auth_user_id: authUserId,
         first_name: data.firstName,
         last_name: data.lastName,
         email: data.email,
         role: data.type === 'company' ? 'company_rep' : 'student',
-        is_active: true,
-      }, consent);
-      if (personError || !personRow) throw personError ?? new Error('Unable to create person');
+        kvkk_consent: data.kvkkConsent,
+        terms_consent: data.termsConsent ?? false,
+        consent_given_at: data.kvkkConsent || data.termsConsent ? nowIso : null,
+      }).select('*').single();
+      if (personError || !personRow) {
+        console.error('Person insert failed during signup:', personError);
+        throw personError ?? new Error('Unable to create person');
+      }
       const person = personRow as Person;
 
       if (data.type === 'student') {
@@ -231,10 +223,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           gpa: data.gpa ?? null,
           academic_year: data.academicYear,
           career_goal: data.careerGoal ?? null,
-          profile_complete: false,
-          is_edu_verified: false,
         }, { onConflict: 'person_id' });
-        if (error) throw error;
+        if (error) { console.error('Student profile insert failed:', error); throw error; }
       } else {
         let companyId: string | null = null;
         const { data: existingCompany } = await supabase.from('companies').select('company_id').ilike('name', (data.companyName || '').trim()).maybeSingle();
@@ -246,11 +236,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             size: data.companySize ?? 'sme',
             website: data.companyWebsite ?? null,
             location: data.companyLocation ?? null,
-            description: null,
-            is_approved: false,
-            is_premium: false,
           }).select('company_id').single();
-          if (companyError || !createdCompany) throw companyError ?? new Error('Unable to create company');
+          if (companyError || !createdCompany) { console.error('Company insert failed:', companyError); throw companyError ?? new Error('Unable to create company'); }
           companyId = createdCompany.company_id;
         }
 
@@ -258,9 +245,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           person_id: person.person_id,
           company_id: companyId,
           job_title: data.representativeJobTitle ?? null,
-          is_verified: false,
         }, { onConflict: 'person_id' });
-        if (repError) throw repError;
+        if (repError) { console.error('Company representative insert failed:', repError); throw repError; }
       }
 
       await loadSupabaseProfile(authUserId);
@@ -287,7 +273,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return created;
   }, [hydrateMock, loadSupabaseProfile]);
 
-  const value = useMemo(() => ({ currentUser: user, user, student, rep, company, role, loginAsDemoUser, signupMockUser, logout, switchRole, isLoading }), [user, student, rep, company, role, loginAsDemoUser, signupMockUser, logout, switchRole, isLoading]);
+  const value = useMemo(() => ({ currentUser: user, user, student, rep, company, role, loginAsDemoUser, loginWithPassword, signupMockUser, logout, switchRole, isLoading }), [user, student, rep, company, role, loginAsDemoUser, loginWithPassword, signupMockUser, logout, switchRole, isLoading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
