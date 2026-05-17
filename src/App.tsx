@@ -288,7 +288,7 @@ export default function App() {
           <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['student']}><StudentDashboard /></ProtectedRoute>} />
           <Route path="/search" element={<ProtectedRoute allowedRoles={['student']}><SearchPage /></ProtectedRoute>} />
           <Route path="/onboarding" element={<ProtectedRoute allowedRoles={['student']}><OnboardingPage /></ProtectedRoute>} />
-          <Route path="/postings/:id" element={<ProtectedRoute allowedRoles={['student']}><PostingDetail /></ProtectedRoute>} />
+          <Route path="/postings/:postingId" element={<ProtectedRoute allowedRoles={['student']}><PostingDetailPage /></ProtectedRoute>} />
           <Route path="/skill-gaps" element={<ProtectedRoute allowedRoles={['student']}><SkillGapPage /></ProtectedRoute>} />
           <Route path="/skill-gaps/:id" element={<ProtectedRoute allowedRoles={['student']}><SkillGapPage /></ProtectedRoute>} />
           <Route path="/messages" element={<ProtectedRoute allowedRoles={['student']}><MessagesPage /></ProtectedRoute>} />
@@ -331,7 +331,7 @@ export default function App() {
 // Temporary page components to avoid build errors while constructing
 import { StudentDashboard } from "./pages/student-dashboard";
 import { SearchPage } from "./pages/search-page";
-import { PostingDetail } from "./pages/posting-detail";
+import { PostingDetailPage } from "./pages/posting-detail-page";
 import { SkillGapPage } from "./pages/skill-gap";
 import { CompanyDashboard } from "./pages/company-dashboard";
 import { ApplicantList } from "./pages/applicant-list";
