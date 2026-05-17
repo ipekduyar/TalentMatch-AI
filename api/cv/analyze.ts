@@ -78,86 +78,124 @@ const uniquePush = (items: string[], value: string) => {
 
 const buildFallbackAnalysis = (cvText: string): AnalysisPayload => {
   const text = cvText.toLowerCase();
-  const detectedSkills: string[] = [];
 
-  const skillKeywords: Array<[string, string[]]> = [
-    ["Python", ["python"]],
-    ["JavaScript", ["javascript", "js"]],
+  const softwareKeywords: Array<[string, string[]]> = [
     ["React", ["react"]],
-    ["SQL", ["sql", "postgres", "postgresql", "mysql"]],
-    ["Excel", ["excel", "spreadsheet"]],
-    ["MATLAB", ["matlab"]],
-    ["Simulink", ["simulink"]],
-    ["AutoCAD", ["autocad"]],
-    ["SolidWorks", ["solidworks", "solid works"]],
-    ["Aspen", ["aspen", "aspen plus", "aspen hysys"]],
-    ["Git", ["git", "github"]],
-    ["Docker", ["docker"]],
-    ["Flask", ["flask"]],
+    ["TypeScript", ["typescript", "ts"]],
+    ["JavaScript", ["javascript", " js ", "node js"]],
     ["Node.js", ["node.js", "nodejs", "node js"]],
-    ["Data Analysis", ["data analysis", "data analytics", "analysis"]],
-    ["Project Management", ["project management", "project planning"]],
-    ["Communication", ["communication", "presentation", "public speaking"]],
-    ["Teamwork", ["teamwork", "team", "collaboration", "collaborative"]],
-    ["Leadership", ["leadership", "leader", "managed", "mentor"]],
-    ["Research", ["research", "literature review"]],
-    ["Laboratory", ["laboratory", "lab", "experiment", "experimental"]],
-    ["Process Engineering", ["process engineering", "process design", "process"]],
+    ["Express", ["express"]],
+    ["Flask", ["flask"]],
+    ["Python", ["python"]],
+    ["SQL", ["sql"]],
+    ["PostgreSQL", ["postgresql", "postgres"]],
+    ["Supabase", ["supabase"]],
+    ["Docker", ["docker"]],
+    ["Git", ["git", "github", "gitlab"]],
+    ["API Development", [" api ", "apis", "rest", "restful", "endpoint"]],
+    ["Backend Development", ["backend", "server-side"]],
+    ["Frontend Development", ["frontend", "front-end", "ui"]],
+    ["Full-Stack Development", ["full-stack", "full stack"]],
+    ["Machine Learning", ["machine learning", "ml model", "neural network"]],
+    ["Data Analysis", ["data analysis", "data analytics", "dashboard", "visualization"]],
+  ];
+
+  const chemicalKeywords: Array<[string, string[]]> = [
     ["Chemical Engineering", ["chemical engineering", "chemical engineer"]],
+    ["Process Engineering", ["process engineering", "process design", "process optimization"]],
+    ["Aspen", ["aspen", "aspen plus", "aspen hysys"]],
+    ["MATLAB", ["matlab"]],
+    ["Laboratory", ["laboratory", "lab", "experimental", "experiment"]],
+    ["Distillation", ["distillation"]],
+    ["Extraction", ["extraction", "solvent extraction"]],
     ["Quality Control", ["quality control", "quality assurance", "qc", "qa"]],
-    ["Sustainability", ["sustainability", "sustainable", "environment"]],
+    ["R&D", ["r&d", "research and development", "research"]],
+    ["Sustainability", ["sustainability", "sustainable", "carbon", "environmental"]],
     ["Energy", ["energy", "renewable", "battery", "hydrogen"]],
   ];
 
-  for (const [skill, keywords] of skillKeywords) {
-    if (keywords.some((keyword) => text.includes(keyword))) {
-      uniquePush(detectedSkills, skill);
+  const businessKeywords: Array<[string, string[]]> = [
+    ["Business Analysis", ["business analysis", "business analyst"]],
+    ["Project Management", ["project management", "project planning"]],
+    ["Operations", ["operations", "process improvement"]],
+    ["Excel", ["excel", "spreadsheet"]],
+    ["Communication", ["communication", "presentation", "stakeholder"]],
+    ["Teamwork", ["teamwork", "collaboration", "cross-functional"]],
+  ];
+
+  const collectMatches = (keywords: Array<[string, string[]]>) => {
+    const matched: string[] = [];
+    let score = 0;
+
+    for (const [skill, terms] of keywords) {
+      if (terms.some((term) => text.includes(term))) {
+        uniquePush(matched, skill);
+        score += 1;
+      }
     }
+
+    return { matched, score };
+  };
+
+  const software = collectMatches(softwareKeywords);
+  const chemical = collectMatches(chemicalKeywords);
+  const business = collectMatches(businessKeywords);
+
+  const direction = software.score >= chemical.score
+    ? (software.score > 0 ? "software" : chemical.score > 0 ? "chemical" : "business")
+    : "chemical";
+
+  const extractedSkills = [
+    ...(direction === "software" ? software.matched : direction === "chemical" ? chemical.matched : business.matched),
+    ...software.matched,
+    ...chemical.matched,
+    ...business.matched,
+  ].filter((skill, index, arr) => arr.findIndex((value) => value.toLowerCase() === skill.toLowerCase()) === index).slice(0, 12);
+
+  if (extractedSkills.length === 0) {
+    extractedSkills.push("Communication", "Teamwork", "Problem Solving");
   }
 
-  if (detectedSkills.length === 0) {
-    detectedSkills.push("Communication", "Teamwork", "Problem Solving");
-  }
+  const suggestedRoles = direction === "software"
+    ? [
+        "Software Developer Intern",
+        "Full-Stack Developer Intern",
+        "Backend Developer Intern",
+        "Frontend Developer Intern",
+        "Data Analyst Intern",
+      ]
+    : direction === "chemical"
+      ? ["R&D Intern", "Process Engineering Intern", "Quality Control Intern", "Laboratory Intern", "Sustainability Intern"]
+      : ["Business Analyst Intern", "Operations Intern", "Project Management Intern", "Marketing Intern", "Finance Intern"];
 
-  const cappedSkills = detectedSkills.slice(0, 12);
-  const hasChemicalKeywords = /chemical|process|laboratory|lab|quality|sustainability|energy|aspen|matlab|simulink/.test(text);
-  const hasSoftwareKeywords = /python|javascript|react|sql|flask|node|docker|git|data/.test(text);
+  const skillCount = extractedSkills.length;
+  const cvRichnessSignals = ["project", "intern", "experience", "led", "developed", "designed", "analyzed", "implemented", "research"].filter((signal) => text.includes(signal)).length;
+  const overallScore = Math.max(60, Math.min(90, 58 + skillCount * 2 + cvRichnessSignals * 1.5));
 
-  let suggestedRoles: string[];
-  if (hasChemicalKeywords) {
-    suggestedRoles = ["R&D Intern", "Process Engineering Intern", "Quality Control Intern"];
-  } else if (hasSoftwareKeywords) {
-    suggestedRoles = ["Software Developer Intern", "Data Analyst Intern", "Backend Developer Intern"];
-  } else {
-    suggestedRoles = ["Project Intern", "Operations Intern", "Business Analyst Intern"];
-  }
-
-  const technicalSummary = cappedSkills.slice(0, 5).join(", ");
-  const overallScore = Math.max(60, Math.min(85, 60 + cappedSkills.length * 2));
+  const primarySkills = extractedSkills.slice(0, 5).join(", ");
+  const roleDirection = direction === "software" ? "software development" : direction === "chemical" ? "chemical/process engineering" : "business and operations";
 
   return {
-    extracted_skills: cappedSkills,
+    extracted_skills: extractedSkills,
     strengths: [
-      `The CV shows relevant skills in ${technicalSummary}.`,
-      "The profile demonstrates transferable skills that can support internship readiness.",
-      hasChemicalKeywords || hasSoftwareKeywords
-        ? "The candidate has domain-specific keywords aligned with likely internship roles."
-        : "The candidate presents a general foundation suitable for entry-level internship opportunities.",
+      `Detected strong signals in ${primarySkills}.`,
+      `The CV direction aligns most with ${roleDirection} internship pathways.`,
+      "The profile includes transferable skills that support internship readiness.",
     ],
     weaknesses: [
-      "Some project outcomes could be made more measurable with numbers, tools, or impact statements.",
-      "The CV can be strengthened by making technical tools and role-specific keywords more visible.",
-      "Experience descriptions should emphasize responsibilities, results, and practical achievements more clearly.",
+      `Role targeting can be improved by emphasizing achievements tied to ${roleDirection} outcomes.`,
+      "Some experience bullets need clearer metrics, impact numbers, or quantified results.",
+      `Important detected skills should be grouped in a dedicated skills section for recruiter scanning.`,
     ],
     suggested_roles: suggestedRoles,
     improvement_suggestions: [
-      "Add measurable outcomes such as percentages, time saved, experiment count, project scope, or team size.",
-      "Group technical tools and software skills in a dedicated skills section.",
-      "Use internship-specific keywords that match target roles and job descriptions.",
-      "Keep formatting consistent and prioritize recent, relevant projects near the top.",
+      `Prioritize projects and tools that reinforce a ${roleDirection} profile.`,
+      "Add measurable outcomes such as percentages, throughput gains, time saved, or quality improvements.",
+      "Tailor summary and bullet keywords to internship postings in your target role family.",
+      "Keep formatting concise and place the most relevant technical or domain projects first.",
       "Generated using demo fallback because Gemini quota is unavailable.",
     ],
-    overall_score: overallScore,
+    overall_score: Math.round(overallScore),
   };
 };
 
