@@ -19,15 +19,115 @@ type PostingRow = InternshipPosting & {
   required_level?: string | null;
 };
 
+type PersonProfile = {
+  person_id: string;
+  auth_user_id: string;
+  role: string;
+};
+
+type CompanyRepresentativeProfile = {
+  representative_id: string;
+  person_id: string;
+  company_id: string;
+};
+
+type CompanyProfile = {
+  company_id: string;
+};
+
+export const getCurrentCompanyRepresentativeContext = async (): Promise<{
+  person: PersonProfile;
+  representative: CompanyRepresentativeProfile;
+  company: CompanyProfile;
+  company_id: string;
+  representative_id: string;
+}> => {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized.');
+  }
+
+  const { data: authData } = await supabase.auth.getUser();
+  const user = authData.user;
+
+  if (!user) {
+    throw new Error('No authenticated Supabase user found.');
+  }
+
+  console.log('Posting auth user', user.id);
+
+  const { data: person, error: personError } = await supabase
+    .from('persons')
+    .select('person_id,auth_user_id,role')
+    .eq('auth_user_id', user.id)
+    .maybeSingle();
+
+  if (personError) {
+    console.error('person lookup failed', personError);
+    throw personError;
+  }
+
+  if (!person) {
+    throw new Error('No person profile found for this account.');
+  }
+
+  console.log('Posting person profile', person);
+
+  if (person.role !== 'company_rep') {
+    throw new Error('No company representative profile found for this account.');
+  }
+
+  const { data: representative, error: representativeError } = await supabase
+    .from('company_representatives')
+    .select('representative_id,person_id,company_id')
+    .eq('person_id', person.person_id)
+    .maybeSingle();
+
+  if (representativeError) {
+    console.error('representative lookup failed', representativeError);
+    throw representativeError;
+  }
+
+  if (!representative) {
+    throw new Error('No company representative profile found for this account.');
+  }
+
+  console.log('Posting representative profile', representative);
+
+  const { data: company, error: companyError } = await supabase
+    .from('companies')
+    .select('company_id')
+    .eq('company_id', representative.company_id)
+    .maybeSingle();
+
+  if (companyError) {
+    console.error('company lookup failed', companyError);
+    throw companyError;
+  }
+
+  if (!company) {
+    throw new Error('No company profile found for this representative.');
+  }
+
+  console.log('Posting company profile', company);
+
+  return {
+    person,
+    representative,
+    company,
+    company_id: representative.company_id,
+    representative_id: representative.representative_id,
+  };
+};
+
 const toPosting = (row: PostingRow): InternshipPosting => ({
   ...(row as InternshipPosting),
   rep_id: row.rep_id ?? row.representative_id ?? '',
   monthly_stipend_try: row.monthly_stipend_try ?? row.monthly_stipend ?? null,
 });
 
-const mapInsertPayload = (posting: InternshipPosting, overrides?: { companyId?: string; representativeId?: string }) => ({
-  company_id: overrides?.companyId ?? posting.company_id,
-  representative_id: overrides?.representativeId ?? posting.rep_id,
+const mapInsertPayload = (posting: InternshipPosting, overrides: { companyId: string; representativeId: string }) => ({
+  company_id: overrides.companyId,
+  representative_id: overrides.representativeId,
   title: posting.title,
   description: posting.description,
   location: posting.location,
@@ -48,14 +148,15 @@ const mapInsertPayload = (posting: InternshipPosting, overrides?: { companyId?: 
 export const getCompanyPostings = async (companyId: string): Promise<InternshipPosting[]> => {
   if (!isSupabaseConfigured || !supabase) return getLocalCompanyPostings(companyId);
 
+  const context = await getCurrentCompanyRepresentativeContext();
   const { data, error } = await supabase
     .from(TABLE)
     .select('*')
-    .eq('company_id', companyId)
+    .eq('company_id', context.company_id)
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Supabase getCompanyPostings error:', error);
+    console.error('posting select/update/duplicate failed', error);
     throw error;
   }
 
@@ -67,15 +168,18 @@ export const createCompanyPosting = async (posting: InternshipPosting): Promise<
     return addCompanyPosting(posting);
   }
 
+  const context = await getCurrentCompanyRepresentativeContext();
   const payload = mapInsertPayload(posting, {
-    companyId: posting.company_id,
-    representativeId: posting.rep_id,
+    companyId: context.company_id,
+    representativeId: context.representative_id,
   });
+
+  console.log('Creating internship posting payload', payload);
 
   const { data, error } = await supabase.from(TABLE).insert(payload).select('*').single();
 
   if (error || !data) {
-    console.error('Supabase createCompanyPosting error:', error);
+    console.error('posting insert failed', error);
     throw error ?? new Error('Insert failed');
   }
 
@@ -85,9 +189,17 @@ export const createCompanyPosting = async (posting: InternshipPosting): Promise<
 export const updateCompanyPosting = async (postingId: string, updates: Partial<InternshipPosting>): Promise<InternshipPosting | null> => {
   if (!isSupabaseConfigured || !supabase) return updateLocalPosting(postingId, updates);
 
-  const { data, error } = await supabase.from(TABLE).update(updates).eq('posting_id', postingId).select('*').single();
+  const context = await getCurrentCompanyRepresentativeContext();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .update(updates)
+    .eq('posting_id', postingId)
+    .eq('company_id', context.company_id)
+    .select('*')
+    .maybeSingle();
+
   if (error || !data) {
-    console.error('Supabase updateCompanyPosting error:', error);
+    console.error('posting select/update/duplicate failed', error);
     throw error ?? new Error('Update failed');
   }
   return toPosting(data as PostingRow);
@@ -96,9 +208,15 @@ export const updateCompanyPosting = async (postingId: string, updates: Partial<I
 export const duplicateCompanyPosting = async (postingId: string): Promise<InternshipPosting | null> => {
   if (!isSupabaseConfigured || !supabase) return duplicateLocalPosting(postingId);
 
-  const { data: source, error: sourceError } = await supabase.from(TABLE).select('*').eq('posting_id', postingId).single();
+  const context = await getCurrentCompanyRepresentativeContext();
+  const { data: source, error: sourceError } = await supabase
+    .from(TABLE)
+    .select('*')
+    .eq('posting_id', postingId)
+    .eq('company_id', context.company_id)
+    .maybeSingle();
   if (sourceError || !source) {
-    console.error('Supabase duplicateCompanyPosting source fetch error:', sourceError);
+    console.error('posting select/update/duplicate failed', sourceError);
     throw sourceError ?? new Error('Source posting not found');
   }
 
