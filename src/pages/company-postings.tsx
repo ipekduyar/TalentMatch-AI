@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCurrentUser } from "@/lib/auth-context";
 import { APPLICATIONS } from "@/lib/mock-data";
 import {
+  activateCompanyPosting,
   closeCompanyPosting,
   duplicateCompanyPosting,
   getCompanyPostings,
@@ -79,6 +80,23 @@ export const CompanyPostingsPage = () => {
     }
   };
 
+
+  const activatePosting = async (postingId: string) => {
+    try {
+      const updated = await activateCompanyPosting(postingId);
+      if (!updated) {
+        toast.error("Posting could not be activated.");
+        return;
+      }
+
+      setPostings((prev) => prev.map((posting) => (posting.posting_id === postingId ? updated : posting)));
+      toast.success("Posting activated successfully.");
+    } catch (error) {
+      console.error("Supabase activate posting error:", error);
+      toast.error(getErrorMessage(error));
+    }
+  };
+
   const duplicatePosting = async (postingId: string) => {
     try {
       const duplicate = await duplicateCompanyPosting(postingId);
@@ -146,6 +164,11 @@ export const CompanyPostingsPage = () => {
                   <Button variant="outline" onClick={() => toast.success(`Viewing applicants for ${posting.title}.`)}>View applicants</Button>
                   <Button variant="outline" onClick={() => toast.success(`Edit mode opened for ${posting.title}.`)}>Edit</Button>
                   <Button variant="outline" onClick={() => closePosting(posting.posting_id)} disabled={posting.status === "closed"}>Close posting</Button>
+                  {(posting.status === "draft" || posting.status === "pending_review") && (
+                    <Button variant="default" onClick={() => activatePosting(posting.posting_id)}>
+                      {posting.status === "draft" ? "Publish" : "Activate"}
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => duplicatePosting(posting.posting_id)}>Duplicate</Button>
                 </div>
               </CardContent>
