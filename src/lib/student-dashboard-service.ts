@@ -87,7 +87,7 @@ export const getActiveInternshipPostings = async (): Promise<InternshipPosting[]
 
   const { data, error } = await supabase
     .from("internship_postings")
-    .select("internship_posting_id, company_id, representative_id, title, description, location, industry, required_skills, desired_skills, start_date, duration_weeks, is_paid, monthly_stipend, is_remote, status, created_at, deadline")
+    .select("internship_posting_id, company_id, representative_id, title, description, location, industry, required_skills, desired_skills, start_date, duration_weeks, is_paid, monthly_stipend, is_remote, status, created_at, deadline, companies(name)")
     .eq("status", "active")
     .order("created_at", { ascending: false });
 
@@ -118,5 +118,6 @@ export const getActiveInternshipPostings = async (): Promise<InternshipPosting[]
     status: posting.status,
     created_at: posting.created_at,
     deadline: posting.deadline,
+    company_name: posting.companies?.name ?? "Unknown Company",
   }));
 };

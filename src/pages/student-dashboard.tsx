@@ -265,11 +265,11 @@ export const StudentDashboard = () => {
                    <div className="flex items-center justify-between">
                      <div className="flex items-center space-x-8">
                        <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center p-4 border border-slate-100 shadow-inner overflow-hidden group-hover:scale-105 transition-transform">
-                          <img referrerPolicy="no-referrer" src={`https://api.dicebear.com/7.x/initials/svg?seed=${posting.title}`} alt="logo" className="w-full h-full object-contain" />
+                          <img referrerPolicy="no-referrer" src={`https://api.dicebear.com/7.x/initials/svg?seed=${posting.company_name || posting.title}`} alt="logo" className="w-full h-full object-contain" />
                        </div>
                        <div>
                          <h3 className="text-2xl font-black tracking-tight text-slate-900 leading-none mb-2">{posting.title}</h3>
-                         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Trendyol • {posting.location}</p>
+                         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{posting.company_name || "Unknown Company"} • {posting.location}</p>
                        </div>
                      </div>
                      <div className="text-right flex items-center space-x-10">
