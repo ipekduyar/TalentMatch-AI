@@ -80,15 +80,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadSupabaseProfile = useCallback(async (authUserId: string) => {
     if (!supabase) return;
-    const { data: person, error } = await supabase.from('persons').select('*').eq('auth_user_id', authUserId).single();
-    if (error || !person) throw error ?? new Error('Person profile not found');
+    console.log('Loading person by auth_user_id', authUserId);
+    const { data: person, error } = await supabase.from('persons').select('*').eq('auth_user_id', authUserId).maybeSingle();
+    if (error) {
+      console.error('person profile not found', error);
+      throw error;
+    }
+    if (!person) {
+      const personError = new Error('Login succeeded, but no profile was found for this user.');
+      console.error('person profile not found', personError);
+      throw personError;
+    }
+    console.log('Person loaded', person);
 
     const typedPerson = person as Person;
     setUser(typedPerson);
     setRole(typedPerson.role);
 
     if (typedPerson.role === 'student') {
-      const { data: studentRow } = await supabase.from('students').select('*').eq('person_id', typedPerson.person_id).single();
+      const { data: studentRow, error: studentError } = await supabase.from('students').select('*').eq('person_id', typedPerson.person_id).maybeSingle();
+      if (studentError) {
+        console.error('student profile load failed', studentError);
+        throw studentError;
+      }
+      console.log('Student profile loaded', studentRow);
       setStudent((studentRow as Student) ?? null);
       setRep(null);
       setCompany(null);
@@ -96,11 +111,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (typedPerson.role === 'company_rep') {
-      const { data: repRow } = await supabase.from('company_representatives').select('*').eq('person_id', typedPerson.person_id).single();
+      const { data: repRow, error: repError } = await supabase.from('company_representatives').select('*').eq('person_id', typedPerson.person_id).maybeSingle();
+      if (repError) {
+        console.error('company representative profile load failed', repError);
+        throw repError;
+      }
       const typedRep = (repRow as CompanyRepresentative) ?? null;
+      console.log('Company representative profile loaded', typedRep);
       setRep(typedRep);
       if (typedRep) {
-        const { data: companyRow } = await supabase.from('companies').select('*').eq('company_id', typedRep.company_id).single();
+        const { data: companyRow, error: companyError } = await supabase.from('companies').select('*').eq('company_id', typedRep.company_id).maybeSingle();
+        if (companyError) {
+          console.error('company profile load failed', companyError);
+          throw companyError;
+        }
         setCompany((companyRow as Company) ?? null);
       } else {
         setCompany(null);
@@ -128,7 +152,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data } = await supabase.auth.getSession();
       const authUserId = data.session?.user?.id;
       if (authUserId) {
-        try { await loadSupabaseProfile(authUserId); } catch { setUser(null); }
+        try {
+          await loadSupabaseProfile(authUserId);
+        } catch (error) {
+          console.error('Auth bootstrap profile hydration failed', error);
+          await supabase.auth.signOut();
+          setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
+        }
       }
       if (mounted) setIsLoading(false);
     };
@@ -140,7 +170,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
         return;
       }
-      try { await loadSupabaseProfile(session.user.id); } catch { /* no-op */ }
+      try {
+        await loadSupabaseProfile(session.user.id);
+      } catch (error) {
+        console.error('Auth state profile hydration failed', error);
+        await supabase.auth.signOut();
+        setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
+      }
     });
 
     return () => {
@@ -162,10 +198,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      console.error('Supabase login failed:', error);
+      console.error('login auth failed', error);
       throw error;
     }
     const authUserId = data.user?.id;
+    console.log('Login auth ok', authUserId);
     if (!authUserId) throw new Error('Login succeeded but no auth user id was returned.');
     try {
       return await loadSupabaseProfile(authUserId);
