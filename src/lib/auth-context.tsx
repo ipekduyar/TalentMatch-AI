@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { Person, Student, CompanyRepresentative, Company, UserRole } from './types';
 import { PERSONS, STUDENTS, REPS, COMPANIES } from './mock-data';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { User as SupabaseAuthUser } from '@supabase/supabase-js';
 
 interface SignupMockData {
   firstName: string;
@@ -47,6 +48,25 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMessage: string, ms =
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), ms)),
   ]) as Promise<T>;
+};
+
+const buildPersonFromAuthUser = (authUser: SupabaseAuthUser, fallbackRole?: UserRole): Person => {
+  const metadata = authUser.user_metadata ?? {};
+  const email = authUser.email ?? '';
+  const emailPrefix = email.split('@')[0] || 'user';
+  const roleFromMetadata = metadata.role as UserRole | undefined;
+  return {
+    person_id: `auth_${authUser.id}`,
+    auth_user_id: authUser.id,
+    first_name: (metadata.first_name as string | undefined) ?? emailPrefix,
+    last_name: (metadata.last_name as string | undefined) ?? '',
+    email,
+    role: roleFromMetadata ?? fallbackRole ?? 'student',
+    kvkk_consent: (metadata.kvkk_consent as boolean | undefined) ?? true,
+    created_at: authUser.created_at ?? new Date().toISOString(),
+    is_active: true,
+    avatar_url: null,
+  };
 };
 
 
@@ -135,18 +155,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data } = await supabase.auth.getSession();
       const authUserId = data.session?.user?.id;
       if (authUserId) {
+        const immediatePerson = buildPersonFromAuthUser(data.session.user);
+        setUser(immediatePerson);
+        setRole(immediatePerson.role);
+        setStudent(null);
+        setRep(null);
+        setCompany(null);
         if (isLoggingInRef.current) {
           console.log('Login in progress: skipping bootstrap hydration');
         } else if (isSigningUpRef.current) {
           console.log('Signup in progress: ignoring auth-state event');
         } else {
-          try {
-            await loadSupabaseProfile(authUserId);
-          } catch (error) {
+          void loadSupabaseProfile(authUserId).catch((error) => {
             console.error('Auth bootstrap profile hydration failed', error);
-            await supabase.auth.signOut();
-            setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
-          }
+          });
         }
       }
       if (mounted) setIsLoading(false);
@@ -163,13 +185,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
         return;
       }
-      try {
-        await loadSupabaseProfile(session.user.id);
-      } catch (error) {
+      const immediatePerson = buildPersonFromAuthUser(session.user);
+      setUser(immediatePerson);
+      setRole(immediatePerson.role);
+      setStudent(null);
+      setRep(null);
+      setCompany(null);
+      void loadSupabaseProfile(session.user.id).catch((error) => {
         console.error('Auth state profile hydration failed', error);
-        await supabase.auth.signOut();
-        setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
-      }
+      });
     });
 
     return () => {
@@ -200,18 +224,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('login auth failed', error);
         throw error;
       }
-      const authUserId = data.user?.id;
+      const authUser = data.user;
+      const authUserId = authUser?.id;
       console.log('Login auth ok', authUserId);
-      if (!authUserId) throw new Error('Login succeeded but no auth user id was returned.');
-      const hydratedPerson = await withTimeout(
-        loadSupabaseProfile(authUserId),
-        'Timed out while hydrating login profile.'
-      );
-      console.log("Login profile hydration complete");
+      if (!authUser || !authUserId) throw new Error('Login succeeded but no auth user id was returned.');
+      const immediatePerson = buildPersonFromAuthUser(authUser);
+      setUser(immediatePerson);
+      setRole(immediatePerson.role);
+      setStudent(null);
+      setRep(null);
+      setCompany(null);
       isLoggingInRef.current = false;
-      return hydratedPerson;
+      void loadSupabaseProfile(authUserId).catch((profileError) => {
+        console.error("Login background profile hydration failed", profileError);
+      });
+      return immediatePerson;
     } catch (error) {
-      console.error("Login profile hydration failed", error);
+      console.error("Login failed", error);
       const message = formatErrorMessage(error);
       isLoggingInRef.current = false;
       await supabase.auth.signOut({ scope: 'local' });
@@ -279,36 +308,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw authError;
         }
 
-        const authUserId = auth.user?.id;
-        if (!authUserId) {
+        const authUser = auth.user;
+        const authUserId = authUser?.id;
+        if (!authUser || !authUserId) {
           throw new Error('Supabase signUp succeeded but no auth user id was returned.');
         }
         console.log('Auth signup ok', auth.user?.id);
-
-        const loadSupabaseProfileWithRetry = async (id: string): Promise<Person> => {
-          const maxAttempts = 5;
-          const waitMs = 300;
-
-          for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-            try {
-              return await loadSupabaseProfile(id);
-            } catch (error) {
-              if (attempt === maxAttempts) {
-                console.error('Profile hydration did not complete after signup retries', error);
-                break;
-              }
-              await new Promise((resolve) => setTimeout(resolve, waitMs));
-            }
-          }
-
-          throw new Error('Account was created, but profile setup is not ready yet. Please try logging in again.');
-        };
-
-        const hydratedPerson = await loadSupabaseProfileWithRetry(authUserId);
-        if (!hydratedPerson) {
-          throw new Error('Account was created, but profile setup is not ready yet. Please try logging in again.');
-        }
-        return hydratedPerson;
+        const immediatePerson = buildPersonFromAuthUser(authUser, role);
+        setUser(immediatePerson);
+        setRole(role);
+        setStudent(null);
+        setRep(null);
+        setCompany(null);
+        isSigningUpRef.current = false;
+        void loadSupabaseProfile(authUserId).catch((profileError) => {
+          console.error('Signup background profile hydration failed', profileError);
+        });
+        return immediatePerson;
       } catch (profileError) {
         const message = formatErrorMessage(profileError);
         console.error('Signup profile setup failed after auth user creation', profileError);
