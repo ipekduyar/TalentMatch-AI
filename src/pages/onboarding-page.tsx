@@ -30,7 +30,35 @@ export const OnboardingPage = () => {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<CvAnalysisResult | null>(null);
+  const [skillLevels, setSkillLevels] = useState<Record<string, number>>({});
+  const [selectedCareerGoal, setSelectedCareerGoal] = useState<string | null>(null);
   const navigate = useNavigate();
+  const step3Skills = useMemo(() => {
+    const extractedSkills =
+      analysisResult?.extracted_skills?.filter((skill) => skill.trim().length > 0) ?? [];
+    if (extractedSkills.length > 0) {
+      return extractedSkills.slice(0, 8);
+    }
+    if (MOCK_PARSED_SKILLS.length > 0) {
+      return MOCK_PARSED_SKILLS.slice(0, 8);
+    }
+    return ["Python", "SQL", "Project Management", "Agile", "Excel"].slice(0, 8);
+  }, [analysisResult]);
+  const step4CareerGoals = useMemo(() => {
+    const suggestedRoles =
+      analysisResult?.suggested_roles?.filter((role) => role.trim().length > 0) ?? [];
+    if (suggestedRoles.length > 0) {
+      return suggestedRoles.slice(0, 6);
+    }
+    return [
+      "Product Management",
+      "Data Science",
+      "Software Engineering",
+      "Marketing",
+      "Finance",
+      "Supply Chain",
+    ].slice(0, 6);
+  }, [analysisResult]);
   const uploadTimestamp = useMemo(
     () => (cvMetadata ? new Date(cvMetadata.uploadedAtIso).toLocaleString() : ""),
     [cvMetadata]
@@ -41,6 +69,22 @@ export const OnboardingPage = () => {
       void refreshLatestDocumentId();
     }
   }, [cvMetadata]);
+
+  useEffect(() => {
+    setSkillLevels((currentLevels) => {
+      const nextLevels = { ...currentLevels };
+      let changed = false;
+
+      step3Skills.forEach((skill) => {
+        if (!nextLevels[skill]) {
+          nextLevels[skill] = 3;
+          changed = true;
+        }
+      });
+
+      return changed ? nextLevels : currentLevels;
+    });
+  }, [step3Skills]);
 
   const refreshLatestDocumentId = async () => {
     if (!supabase) return;
@@ -120,6 +164,10 @@ export const OnboardingPage = () => {
         setStep(3);
       }, 3000);
     } else if (step === 4) {
+      if (!selectedCareerGoal) {
+        toast.error("Please select a career goal to continue.");
+        return;
+      }
       toast.success("Profile completed!");
       navigate('/dashboard');
     } else {
@@ -250,15 +298,21 @@ export const OnboardingPage = () => {
               <div className="space-y-6">
                 <div className="text-center space-y-2">
                    <h1 className="text-3xl font-bold text-slate-900">Verify your skills</h1>
-                   <p className="text-slate-500">We found 8 skills in your CV. Adjust your proficiency levels.</p>
+                   <p className="text-slate-500">We found {step3Skills.length} skills in your CV. Adjust your proficiency levels.</p>
                 </div>
                 <div className="space-y-4">
-                   {['Python', 'SQL', 'Project Management', 'Agile', 'Excel'].map((skill) => (
+                   {step3Skills.map((skill) => (
                      <div key={skill} className="p-4 border rounded-xl flex items-center justify-between">
                         <span className="font-bold">{skill}</span>
                         <div className="flex items-center space-x-2">
                            {[1,2,3,4,5].map(i => (
-                             <div key={i} className={`w-3 h-3 rounded-full ${i <= 3 ? 'bg-blue-600' : 'bg-slate-100'}`}></div>
+                             <button
+                               type="button"
+                               key={i}
+                               onClick={() => setSkillLevels((prev) => ({ ...prev, [skill]: i }))}
+                               className={`w-3 h-3 rounded-full transition-colors ${i <= (skillLevels[skill] ?? 3) ? 'bg-blue-600' : 'bg-slate-100'}`}
+                               aria-label={`Set ${skill} proficiency to ${i}`}
+                             ></button>
                            ))}
                         </div>
                      </div>
@@ -271,11 +325,24 @@ export const OnboardingPage = () => {
               <div className="space-y-6">
                 <div className="text-center space-y-2">
                    <h1 className="text-3xl font-bold text-slate-900">Your career goal</h1>
-                   <p className="text-slate-500">What kind of internships are you looking for?</p>
+                   <p className="text-slate-500">
+                    {analysisResult
+                      ? "Based on your CV, these internship tracks may fit you."
+                      : "What kind of internships are you looking for?"}
+                   </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                   {['Product Management', 'Data Science', 'Software Engineering', 'Marketing', 'Finance', 'Supply Chain'].map((goal) => (
-                     <button key={goal} className="p-6 border rounded-2xl text-left hover:border-blue-600 hover:bg-blue-50 transition-all active:scale-95">
+                   {step4CareerGoals.map((goal) => (
+                     <button
+                       type="button"
+                       key={goal}
+                       onClick={() => setSelectedCareerGoal(goal)}
+                       className={`p-6 border rounded-2xl text-left transition-all active:scale-95 ${
+                        selectedCareerGoal === goal
+                          ? "border-blue-600 bg-blue-50"
+                          : "hover:border-blue-600 hover:bg-blue-50"
+                       }`}
+                     >
                         <p className="font-bold text-slate-900">{goal}</p>
                      </button>
                    ))}
@@ -291,7 +358,11 @@ export const OnboardingPage = () => {
               >
                 <ChevronLeft className="w-4 h-4 mr-2" /> Back
               </Button>
-              <Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 px-8" disabled={step === 2 && uploadStatus === "uploading"}>
+              <Button
+                onClick={handleNext}
+                className="bg-blue-600 hover:bg-blue-700 px-8"
+                disabled={(step === 2 && uploadStatus === "uploading") || (step === 4 && !selectedCareerGoal)}
+              >
                 {step === 4 ? 'Finish' : 'Continue'} <ChevronRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
