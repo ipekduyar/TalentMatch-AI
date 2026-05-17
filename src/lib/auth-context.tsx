@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Person, Student, CompanyRepresentative, Company, UserRole } from './types';
 import { PERSONS, STUDENTS, REPS, COMPANIES } from './mock-data';
 import { isSupabaseConfigured, supabase } from './supabase';
@@ -55,6 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [company, setCompany] = useState<Company | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const isSigningUpRef = useRef(false);
 
   const hydrateMock = useCallback((person: Person | null) => {
     setUser(person);
@@ -152,12 +153,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data } = await supabase.auth.getSession();
       const authUserId = data.session?.user?.id;
       if (authUserId) {
-        try {
-          await loadSupabaseProfile(authUserId);
-        } catch (error) {
-          console.error('Auth bootstrap profile hydration failed', error);
-          await supabase.auth.signOut();
-          setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
+        if (isSigningUpRef.current) {
+          console.log('Signup in progress: skipping auth-state hydration');
+        } else {
+          try {
+            await loadSupabaseProfile(authUserId);
+          } catch (error) {
+            console.error('Auth bootstrap profile hydration failed', error);
+            await supabase.auth.signOut();
+            setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
+          }
         }
       }
       if (mounted) setIsLoading(false);
@@ -168,6 +173,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!session?.user?.id) {
         setUser(null); setRole(null); setStudent(null); setRep(null); setCompany(null);
+        return;
+      }
+      if (isSigningUpRef.current) {
+        console.log('Signup in progress: skipping auth-state hydration');
         return;
       }
       try {
@@ -235,14 +244,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!supabase || !data.password) throw new Error('Supabase is configured but client is unavailable.');
 
       const role: UserRole = data.type === 'company' ? 'company_rep' : 'student';
+      isSigningUpRef.current = true;
       const { data: auth, error } = await supabase.auth.signUp({ email: data.email, password: data.password });
       if (error) {
+        isSigningUpRef.current = false;
         console.error('Auth signup failed', error);
         throw error;
       }
 
       const authUserId = auth.user?.id;
-      if (!authUserId) throw new Error('Supabase signUp succeeded but no auth user id was returned.');
+      if (!authUserId) {
+        isSigningUpRef.current = false;
+        throw new Error('Supabase signUp succeeded but no auth user id was returned.');
+      }
       console.log('Auth signup ok', auth.user?.id);
 
       try {
@@ -329,10 +343,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('Representative created', rep);
         }
 
-        await loadSupabaseProfile(authUserId);
-        return person;
+        console.log('Signup profile creation complete; hydrating profile');
+        const hydratedPerson = await loadSupabaseProfile(authUserId);
+        isSigningUpRef.current = false;
+        return hydratedPerson ?? person;
       } catch (profileError) {
+        isSigningUpRef.current = false;
+        console.error('Signup profile creation failed', profileError);
         const message = profileError instanceof Error ? profileError.message : 'Unknown error';
+        try {
+          await supabase.auth.signOut();
+        } catch (signOutError) {
+          console.error('Signup cleanup signOut failed', signOutError);
+        }
         throw new Error(`Account was created, but profile setup failed: ${message}. Please contact support or try with a new email.`);
       }
     }
