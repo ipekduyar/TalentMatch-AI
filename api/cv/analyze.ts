@@ -46,6 +46,120 @@ const parseStrictAnalysisJson = (raw: string): AnalysisPayload => {
   };
 };
 
+const stringifyErrorForDetection = (error: unknown): string => {
+  if (error instanceof Error) {
+    return `${error.name} ${error.message} ${error.stack ?? ""}`;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
+const isGeminiQuotaError = (error: unknown): boolean => {
+  const message = stringifyErrorForDetection(error).toLowerCase();
+  return (
+    message.includes("429") ||
+    message.includes("resource_exhausted") ||
+    message.includes("quota") ||
+    message.includes("billing") ||
+    message.includes("rate-limit") ||
+    message.includes("rate limit")
+  );
+};
+
+const uniquePush = (items: string[], value: string) => {
+  if (!items.some((item) => item.toLowerCase() === value.toLowerCase())) {
+    items.push(value);
+  }
+};
+
+const buildFallbackAnalysis = (cvText: string): AnalysisPayload => {
+  const text = cvText.toLowerCase();
+  const detectedSkills: string[] = [];
+
+  const skillKeywords: Array<[string, string[]]> = [
+    ["Python", ["python"]],
+    ["JavaScript", ["javascript", "js"]],
+    ["React", ["react"]],
+    ["SQL", ["sql", "postgres", "postgresql", "mysql"]],
+    ["Excel", ["excel", "spreadsheet"]],
+    ["MATLAB", ["matlab"]],
+    ["Simulink", ["simulink"]],
+    ["AutoCAD", ["autocad"]],
+    ["SolidWorks", ["solidworks", "solid works"]],
+    ["Aspen", ["aspen", "aspen plus", "aspen hysys"]],
+    ["Git", ["git", "github"]],
+    ["Docker", ["docker"]],
+    ["Flask", ["flask"]],
+    ["Node.js", ["node.js", "nodejs", "node js"]],
+    ["Data Analysis", ["data analysis", "data analytics", "analysis"]],
+    ["Project Management", ["project management", "project planning"]],
+    ["Communication", ["communication", "presentation", "public speaking"]],
+    ["Teamwork", ["teamwork", "team", "collaboration", "collaborative"]],
+    ["Leadership", ["leadership", "leader", "managed", "mentor"]],
+    ["Research", ["research", "literature review"]],
+    ["Laboratory", ["laboratory", "lab", "experiment", "experimental"]],
+    ["Process Engineering", ["process engineering", "process design", "process"]],
+    ["Chemical Engineering", ["chemical engineering", "chemical engineer"]],
+    ["Quality Control", ["quality control", "quality assurance", "qc", "qa"]],
+    ["Sustainability", ["sustainability", "sustainable", "environment"]],
+    ["Energy", ["energy", "renewable", "battery", "hydrogen"]],
+  ];
+
+  for (const [skill, keywords] of skillKeywords) {
+    if (keywords.some((keyword) => text.includes(keyword))) {
+      uniquePush(detectedSkills, skill);
+    }
+  }
+
+  if (detectedSkills.length === 0) {
+    detectedSkills.push("Communication", "Teamwork", "Problem Solving");
+  }
+
+  const cappedSkills = detectedSkills.slice(0, 12);
+  const hasChemicalKeywords = /chemical|process|laboratory|lab|quality|sustainability|energy|aspen|matlab|simulink/.test(text);
+  const hasSoftwareKeywords = /python|javascript|react|sql|flask|node|docker|git|data/.test(text);
+
+  let suggestedRoles: string[];
+  if (hasChemicalKeywords) {
+    suggestedRoles = ["R&D Intern", "Process Engineering Intern", "Quality Control Intern"];
+  } else if (hasSoftwareKeywords) {
+    suggestedRoles = ["Software Developer Intern", "Data Analyst Intern", "Backend Developer Intern"];
+  } else {
+    suggestedRoles = ["Project Intern", "Operations Intern", "Business Analyst Intern"];
+  }
+
+  const technicalSummary = cappedSkills.slice(0, 5).join(", ");
+  const overallScore = Math.max(60, Math.min(85, 60 + cappedSkills.length * 2));
+
+  return {
+    extracted_skills: cappedSkills,
+    strengths: [
+      `The CV shows relevant skills in ${technicalSummary}.`,
+      "The profile demonstrates transferable skills that can support internship readiness.",
+      hasChemicalKeywords || hasSoftwareKeywords
+        ? "The candidate has domain-specific keywords aligned with likely internship roles."
+        : "The candidate presents a general foundation suitable for entry-level internship opportunities.",
+    ],
+    weaknesses: [
+      "Some project outcomes could be made more measurable with numbers, tools, or impact statements.",
+      "The CV can be strengthened by making technical tools and role-specific keywords more visible.",
+      "Experience descriptions should emphasize responsibilities, results, and practical achievements more clearly.",
+    ],
+    suggested_roles: suggestedRoles,
+    improvement_suggestions: [
+      "Add measurable outcomes such as percentages, time saved, experiment count, project scope, or team size.",
+      "Group technical tools and software skills in a dedicated skills section.",
+      "Use internship-specific keywords that match target roles and job descriptions.",
+      "Keep formatting consistent and prioritize recent, relevant projects near the top.",
+      "Generated using demo fallback because Gemini quota is unavailable.",
+    ],
+    overall_score: overallScore,
+  };
+};
 
 const ensurePdfNodePolyfills = async (): Promise<void> => {
   try {
@@ -257,18 +371,28 @@ export default async function handler(req: any, res: any) {
   "overall_score": number
 }\nDo not include markdown, prose, or code fences. CV text:\n${extractedText}`;
 
-    const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const response = await genAI.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: prompt,
-    });
+    let parsed: AnalysisPayload;
+    try {
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await genAI.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: prompt,
+      });
 
-    const rawText = response.text?.trim();
-    if (!rawText) {
-      throw new Error("AI returned an empty response.");
+      const rawText = response.text?.trim();
+      if (!rawText) {
+        throw new Error("AI returned an empty response.");
+      }
+
+      parsed = parseStrictAnalysisJson(rawText);
+    } catch (geminiError) {
+      if (!isGeminiQuotaError(geminiError)) {
+        throw geminiError;
+      }
+
+      console.error("Gemini quota unavailable, using fallback CV analysis", geminiError);
+      parsed = buildFallbackAnalysis(extractedText);
     }
-
-    const parsed = parseStrictAnalysisJson(rawText);
 
     const reportPayload = {
       document_id: documentId,
