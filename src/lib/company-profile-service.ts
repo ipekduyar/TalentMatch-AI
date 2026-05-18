@@ -10,7 +10,7 @@ type Company = {
   location: string | null;
   size: string | null;
   website: string | null;
-  description: string | null;
+  description?: string | null;
 };
 
 export type CompanyContext = { user: AuthUser; person: Person; representative: Representative; company: Company };
@@ -41,16 +41,17 @@ export const getCurrentCompanyContext = async (): Promise<CompanyContext> => {
 
   const { data: company, error: companyError } = await client
     .from("companies")
-    .select("company_id, name, industry, location, size, website, description")
+    .select("company_id, name, industry, location, size, website, created_at, updated_at")
     .eq("company_id", representative.company_id)
     .maybeSingle();
-  if (companyError || !company) throw new Error("Could not find company record.");
+  if (companyError) throw new Error(`Could not load company record: ${companyError.message}`);
+  if (!company) throw new Error("Could not find company record.");
 
   return { user: { id: authData.user.id, email: authData.user.email }, person, representative, company };
 };
 
 export const updateCompanyProfile = async (input: {
-  company: { name: string; industry: string; location: string; size: string; website: string; description: string };
+  company: { name: string; industry: string; location: string; size: string; website: string };
   representativeJobTitle: string;
 }) => {
   const client = ensureSupabase();
@@ -64,7 +65,6 @@ export const updateCompanyProfile = async (input: {
       location: input.company.location || null,
       size: input.company.size || null,
       website: input.company.website || null,
-      description: input.company.description || null,
     })
     .eq("company_id", context.company.company_id);
 
