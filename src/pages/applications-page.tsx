@@ -36,6 +36,13 @@ const STATUS_CONFIG = {
 
 const STAGES = ['Applied', 'Reviewed', 'Shortlisted', 'Interview', 'Final Result'];
 
+const formatApplicationDate = (date?: string | null): string => {
+  if (!date) return '';
+  const parsedDate = new Date(date);
+  if (Number.isNaN(parsedDate.getTime())) return '';
+  return parsedDate.toLocaleDateString("tr-TR");
+};
+
 export const MyApplicationsPage = () => {
   const { user } = useCurrentUser();
   const [filter, setFilter] = useState<string>('all');
@@ -75,6 +82,27 @@ export const MyApplicationsPage = () => {
 
   const handleMessage = () => {
     toast.info("Connecting to recruiter via SecureChat...");
+  };
+
+  const getStageDate = (status: string, stage: string) => {
+    if (!selectedApp) return '';
+    if (stage === 'Applied') {
+      return formatApplicationDate(selectedApp.applied_at ?? selectedApp.created_at);
+    }
+
+    const completedStagesByStatus: Record<string, string[]> = {
+      pending: ['Applied'],
+      reviewed: ['Applied', 'Reviewed'],
+      shortlisted: ['Applied', 'Reviewed', 'Shortlisted'],
+      interview: ['Applied', 'Reviewed', 'Shortlisted', 'Interview'],
+      accepted: ['Applied', 'Reviewed', 'Shortlisted', 'Interview', 'Final Result'],
+      rejected: ['Applied', 'Reviewed', 'Final Result'],
+    };
+
+    const completedStages = completedStagesByStatus[status] ?? ['Applied'];
+    if (!completedStages.includes(stage)) return '';
+
+    return formatApplicationDate(selectedApp.updated_at);
   };
 
   return (
@@ -217,7 +245,9 @@ export const MyApplicationsPage = () => {
                       </div>
                       <div className="pb-4">
                         <p className={cn("text-xs font-black uppercase tracking-widest", isCompleted ? "text-slate-900" : "text-slate-300")}>{stage}</p>
-                        {isCompleted && <p className="text-[10px] text-slate-400 font-medium">May 12, 2024</p>}
+                        {isCompleted && getStageDate(selectedApp.status, stage) && (
+                          <p className="text-[10px] text-slate-400 font-medium">{getStageDate(selectedApp.status, stage)}</p>
+                        )}
                       </div>
                     </div>
                   );
