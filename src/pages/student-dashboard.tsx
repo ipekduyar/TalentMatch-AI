@@ -7,6 +7,7 @@ import { Briefcase, Target, ArrowRight, TrendingUp, Clock, History, AlertCircle,
 import { Link } from "react-router-dom";
 import { getActiveInternshipPostings, getLatestCompletedCvAnalysis, getStudentDashboardActivityData, LatestCvAnalysis, StudentDashboardActivityData } from "@/lib/student-dashboard-service";
 import { InternshipPosting } from "@/lib/types";
+import { generateSkillGaps } from "@/lib/student-insights-service";
 import { 
   ResponsiveContainer, 
   RadarChart, 
@@ -69,9 +70,22 @@ export const StudentDashboard = () => {
   }, [analysis]);
 
   const avgMatchScore = typeof analysis?.overall_score === "number" ? `${Math.round(analysis.overall_score)}%` : "0%";
-  const skillGapCount = analysis?.weaknesses?.length ? String(analysis.weaknesses.length) : "0";
-  const skillGapTrend = analysis?.weaknesses?.length ? "From CV analysis" : "Action required";
-  const bridgeSuggestion = analysis?.improvement_suggestions?.[0] || analysis?.weaknesses?.[0] || null;
+  const generatedSkillGaps = useMemo(() => {
+    if (!analysis) return [];
+    return generateSkillGaps({
+      extracted_skills: analysis.extracted_skills ?? [],
+      suggested_roles: analysis.suggested_roles ?? [],
+      strengths: analysis.strengths ?? [],
+      weaknesses: analysis.weaknesses ?? [],
+      improvement_suggestions: analysis.improvement_suggestions ?? [],
+      overall_score: typeof analysis.overall_score === "number" ? analysis.overall_score : null,
+      created_at: "",
+      updated_at: "",
+    });
+  }, [analysis]);
+  const skillGapCount = analysis ? String(generatedSkillGaps.length) : "0";
+  const skillGapTrend = analysis ? "From CV analysis" : "Analyze CV first";
+  const bridgeSuggestion = generatedSkillGaps[0]?.reason || analysis?.improvement_suggestions?.[0] || analysis?.weaknesses?.[0] || null;
 
   const topMatches = useMemo(() => {
     if (!analysis) return postings.slice(0, 3).map((p, i) => ({ ...p, score: [80, 76, 72][i] ?? 70 }));
