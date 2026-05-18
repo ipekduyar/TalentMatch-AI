@@ -81,6 +81,54 @@ export const getCurrentCompanyId = async (): Promise<string> => {
   return representative.company_id;
 };
 
+
+export type CompanyApplicationStatsByPosting = Record<string, {
+  count: number;
+  avgMatchScore: number;
+}>;
+
+export const getCompanyApplicationStatsByPosting = async (): Promise<CompanyApplicationStatsByPosting> => {
+  const client = ensureSupabase();
+  const companyId = await getCurrentCompanyId();
+
+  const { data, error } = await client
+    .from("applications")
+    .select("internship_posting_id, match_score")
+    .eq("company_id", companyId);
+
+  if (error) throw new Error(error.message || "Could not load company application stats.");
+
+  const aggregation = ((data ?? []) as Array<{ internship_posting_id: string; match_score: number | null }>).reduce<
+    Record<string, { count: number; scoreSum: number; scoreCount: number }>
+  >((acc, app) => {
+    const postingId = app.internship_posting_id;
+    if (!postingId) return acc;
+
+    if (!acc[postingId]) {
+      acc[postingId] = { count: 0, scoreSum: 0, scoreCount: 0 };
+    }
+
+    acc[postingId].count += 1;
+
+    if (typeof app.match_score === "number") {
+      acc[postingId].scoreSum += app.match_score;
+      acc[postingId].scoreCount += 1;
+    }
+
+    return acc;
+  }, {});
+
+  return Object.fromEntries(
+    Object.entries(aggregation).map(([postingId, value]) => [
+      postingId,
+      {
+        count: value.count,
+        avgMatchScore: value.scoreCount > 0 ? Math.round(value.scoreSum / value.scoreCount) : 0,
+      },
+    ]),
+  );
+};
+
 export const getCompanyDashboardData = async (): Promise<DashboardData> => {
   const client = ensureSupabase();
   const companyId = await getCurrentCompanyId();

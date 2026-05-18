@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCurrentUser } from "@/lib/auth-context";
-import { APPLICATIONS } from "@/lib/mock-data";
 import {
   activateCompanyPosting,
   closeCompanyPosting,
@@ -13,13 +12,16 @@ import {
   getCompanyPostings,
 } from "@/lib/company-postings-service";
 import { InternshipPosting } from "@/lib/types";
+import { getCompanyApplicationStatsByPosting, type CompanyApplicationStatsByPosting } from "@/lib/company-applications-service";
 
 type PostingState = InternshipPosting;
 
 export const CompanyPostingsPage = () => {
   const { company, currentUser } = useCurrentUser();
+  const navigate = useNavigate();
   const [postings, setPostings] = useState<PostingState[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [applicationStats, setApplicationStats] = useState<CompanyApplicationStatsByPosting>({});
 
   const getErrorMessage = (error: unknown) => {
     if (typeof error === "object" && error !== null && "message" in error) return String((error as { message: string }).message);
@@ -34,8 +36,12 @@ export const CompanyPostingsPage = () => {
 
     setIsLoading(true);
     try {
-      const nextPostings = await getCompanyPostings();
+      const [nextPostings, nextApplicationStats] = await Promise.all([
+        getCompanyPostings(),
+        getCompanyApplicationStatsByPosting(),
+      ]);
       setPostings(nextPostings);
+      setApplicationStats(nextApplicationStats);
     } catch (error) {
       console.error("Failed to load company postings", error);
       toast.error(getErrorMessage(error));
@@ -57,22 +63,19 @@ export const CompanyPostingsPage = () => {
     const activeCount = companyPostings.filter((posting) => posting.status === "active").length;
     const draftCount = companyPostings.filter((posting) => posting.status === "draft").length;
 
-    const totalApplications = companyPostings.reduce(
-      (sum, posting) => sum + APPLICATIONS.filter((application) => application.posting_id === posting.posting_id).length,
+    const postingStats = companyPostings.map((posting) => applicationStats[posting.posting_id]).filter(Boolean);
+
+    const totalApplications = postingStats.reduce((sum, stats) => sum + stats.count, 0);
+
+    const weightedScore = postingStats.reduce(
+      (sum, stats) => sum + stats.avgMatchScore * stats.count,
       0,
     );
 
-    const allScores = companyPostings.flatMap((posting) =>
-      APPLICATIONS.filter((application) => application.posting_id === posting.posting_id).map((application) => application.match_score),
-    );
-
-    const avgScore = allScores.length > 0 ? Math.round(allScores.reduce((sum, score) => sum + score, 0) / allScores.length) : 0;
+    const avgScore = totalApplications > 0 ? Math.round(weightedScore / totalApplications) : 0;
 
     return { activeCount, draftCount, totalApplications, avgScore };
-  }, [companyPostings]);
-
-  const getApplicationsForPosting = (postingId: string) =>
-    APPLICATIONS.filter((application) => application.posting_id === postingId);
+  }, [applicationStats, companyPostings]);
 
   const closePosting = async (postingId: string) => {
     try {
@@ -154,10 +157,6 @@ export const CompanyPostingsPage = () => {
           </Card>
         )}
         {!isLoading && companyPostings.map((posting) => {
-          const postingApplications = getApplicationsForPosting(posting.posting_id);
-          const postingAverageScore = postingApplications.length
-            ? Math.round(postingApplications.reduce((sum, application) => sum + application.match_score, 0) / postingApplications.length)
-            : 0;
           return (
             <Card key={posting.posting_id} className="bg-white rounded-xl">
               <CardHeader className="space-y-2">
@@ -175,11 +174,11 @@ export const CompanyPostingsPage = () => {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-700">
                   <p><span className="font-medium text-slate-900">Deadline:</span> {new Date(posting.deadline).toLocaleDateString()}</p>
-                  <p><span className="font-medium text-slate-900">Applicants:</span> {postingApplications.length}</p>
-                  <p><span className="font-medium text-slate-900">Avg Match:</span> %{postingAverageScore}</p>
+                  <p><span className="font-medium text-slate-900">Applicants:</span> {applicationStats[posting.posting_id]?.count ?? 0}</p>
+                  <p><span className="font-medium text-slate-900">Avg Match:</span> %{applicationStats[posting.posting_id]?.avgMatchScore ?? 0}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => toast.success(`Viewing applicants for ${posting.title}.`)}>View applicants</Button>
+                  <Button variant="outline" onClick={() => navigate(`/company/postings/${posting.posting_id}/applicants`)}>View applicants</Button>
                   <Button variant="outline" onClick={() => toast.success(`Edit mode opened for ${posting.title}.`)}>Edit</Button>
                   <Button variant="outline" onClick={() => closePosting(posting.posting_id)} disabled={posting.status === "closed"}>Close posting</Button>
                   {(posting.status === "draft" || posting.status === "pending_review") && (
