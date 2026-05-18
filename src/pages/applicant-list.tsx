@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, XCircle, Clock } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   ApplicantItem,
@@ -12,6 +12,7 @@ import {
   getPostingTitle,
   updateApplicationStatus,
 } from "@/lib/company-applications-service";
+import { toast } from "sonner";
 
 const statusLabel: Record<ApplicationStatus, string> = {
   submitted: "Submitted",
@@ -51,10 +52,23 @@ export const ApplicantList = () => {
   const handleStatusUpdate = async (applicationId: string, status: ApplicationStatus) => {
     try {
       setUpdatingId(applicationId);
-      await updateApplicationStatus(applicationId, status);
+      const updated = await updateApplicationStatus(applicationId, status);
+      setApplications((prev) =>
+        prev.map((app) =>
+          app.applicationId === applicationId
+            ? {
+                ...app,
+                status: updated.status,
+              }
+            : app,
+        ),
+      );
+      toast.success("Application status updated.");
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update status.");
+      const message = err instanceof Error ? err.message : "Failed to update status.";
+      setError(message);
+      toast.error(message);
     } finally {
       setUpdatingId(null);
     }
@@ -107,28 +121,41 @@ export const ApplicantList = () => {
                       <td className="px-6 py-4 text-sm text-slate-700">{new Date(app.appliedDate).toLocaleDateString("en-US")}</td>
                       <td className="px-6 py-4"><Badge className="capitalize">{statusLabel[app.status]}</Badge></td>
                       <td className="px-6 py-4 text-sm text-slate-700 max-w-xs">{app.coverLetter?.trim() || "-"}</td>
-                      <td className="px-6 py-4 text-right space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-slate-400 hover:text-amber-600"
-                          disabled={updatingId === app.applicationId}
-                          onClick={() => handleStatusUpdate(app.applicationId, "reviewed")}
-                        ><Clock className="w-4 h-4" /></Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-slate-400 hover:text-green-600"
-                          disabled={updatingId === app.applicationId}
-                          onClick={() => handleStatusUpdate(app.applicationId, "shortlisted")}
-                        ><CheckCircle className="w-4 h-4" /></Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-slate-400 hover:text-red-600"
-                          disabled={updatingId === app.applicationId}
-                          onClick={() => handleStatusUpdate(app.applicationId, "rejected")}
-                        ><XCircle className="w-4 h-4" /></Button>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={updatingId === app.applicationId}
+                            onClick={() => handleStatusUpdate(app.applicationId, "reviewed")}
+                          >
+                            Review
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={updatingId === app.applicationId}
+                            onClick={() => handleStatusUpdate(app.applicationId, "shortlisted")}
+                          >
+                            Shortlist
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={updatingId === app.applicationId}
+                            onClick={() => handleStatusUpdate(app.applicationId, "accepted")}
+                          >
+                            Accept
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={updatingId === app.applicationId}
+                            onClick={() => handleStatusUpdate(app.applicationId, "rejected")}
+                          >
+                            Reject
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

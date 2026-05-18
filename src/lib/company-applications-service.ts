@@ -288,17 +288,38 @@ export const getPostingTitle = async (postingId: string): Promise<string> => {
   return data?.title ?? "Posting";
 };
 
-export const updateApplicationStatus = async (applicationId: string, status: ApplicationStatus): Promise<void> => {
+export const updateApplicationStatus = async (applicationId: string, status: ApplicationStatus): Promise<{ application_id: string; status: ApplicationStatus; updated_at: string | null }> => {
   const client = ensureSupabase();
   const allowedStatuses: ApplicationStatus[] = ["submitted", "reviewed", "shortlisted", "rejected", "accepted"];
   if (!allowedStatuses.includes(status)) {
     throw new Error("Invalid application status.");
   }
 
-  const { error } = await client
-    .from("applications")
-    .update({ status })
-    .eq("application_id", applicationId);
+  const companyId = await getCurrentCompanyId();
 
-  if (error) throw new Error(error.message || "Could not update status.");
+  const { data, error } = await client
+    .from("applications")
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("application_id", applicationId)
+    .eq("company_id", companyId)
+    .select("application_id, status, updated_at")
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to update application status", { applicationId, status, error });
+    throw new Error("Could not update application status. Please try again.");
+  }
+
+  if (!data) {
+    throw new Error("Application status could not be updated. Please check company permissions.");
+  }
+
+  return {
+    application_id: data.application_id,
+    status: data.status as ApplicationStatus,
+    updated_at: data.updated_at,
+  };
 };
