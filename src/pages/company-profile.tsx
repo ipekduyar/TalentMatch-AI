@@ -1,123 +1,95 @@
-import { useState } from "react";
-import { useCurrentUser } from "@/lib/auth-context";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { getCurrentCompanyContext, updateCompanyProfile } from "@/lib/company-profile-service";
+
+const fallback = (value?: string | null) => (value && value.trim() ? value : "Not provided");
 
 export const CompanyProfilePage = () => {
-  const { company } = useCurrentUser();
-  const [formData, setFormData] = useState({
-    companyName: company?.name ?? "Nexora Labs",
-    industry: "Software Development",
-    location: "Austin, Texas",
-    companySize: "201-500 employees",
-    website: "https://www.nexoralabs.com",
-    approvalStatus: "Approved",
-    premiumStatus: "Premium Active",
-    averageScore: "4.7 / 5.0",
-    description:
-      "Nexora Labs builds AI-powered talent and workforce tools that help organizations hire faster and retain top performers through data-informed decisions.",
-    representativeName: "Elena Park",
-    representativeEmail: "elena.park@nexoralabs.com",
-    representativeJobTitle: "Director of Talent Acquisition",
-  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [readonlyData, setReadonlyData] = useState({ representativeName: "Not provided", representativeEmail: "Not provided" });
+  const [formData, setFormData] = useState({ companyName: "", industry: "", location: "", companySize: "", website: "", description: "", representativeJobTitle: "" });
 
-  const initials = formData.companyName
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const context = await getCurrentCompanyContext();
+        setFormData({
+          companyName: context.company.name ?? "",
+          industry: context.company.industry ?? "",
+          location: context.company.location ?? "",
+          companySize: context.company.size ?? "",
+          website: context.company.website ?? "",
+          description: context.company.description ?? "",
+          representativeJobTitle: context.representative.job_title ?? "",
+        });
+        setReadonlyData({
+          representativeName: [context.person.first_name, context.person.last_name].filter(Boolean).join(" ") || "Not provided",
+          representativeEmail: context.person.email || context.user.email || "Not provided",
+        });
+      } catch (err: any) {
+        setError(err?.message || "Could not load company profile.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
-  const onInputChange = (field: keyof typeof formData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const onChange = (key: keyof typeof formData, value: string) => setFormData((prev) => ({ ...prev, [key]: value }));
+
+  const saveChanges = async () => {
+    try {
+      await updateCompanyProfile({
+        company: {
+          name: formData.companyName,
+          industry: formData.industry,
+          location: formData.location,
+          size: formData.companySize,
+          website: formData.website,
+          description: formData.description,
+        },
+        representativeJobTitle: formData.representativeJobTitle,
+      });
+      toast.success("Company profile updated.");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not save company profile.");
+    }
   };
 
-  const saveChanges = () => {
-    toast.success("Company profile changes saved successfully.");
-  };
+  if (loading) return <div className="max-w-7xl mx-auto text-slate-600">Loading company profile...</div>;
+  if (error) return <div className="max-w-7xl mx-auto text-red-600">{error}</div>;
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <Card className="rounded-xl border-slate-200 bg-white">
-        <CardHeader>
-          <CardTitle className="text-slate-900">Company Profile</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4">
-              <Avatar className="h-14 w-14">
-                <AvatarFallback className="bg-blue-100 text-blue-700">{initials}</AvatarFallback>
-              </Avatar>
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-slate-900">{formData.companyName}</h2>
-                <p className="text-sm text-slate-600">{formData.industry}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">{formData.approvalStatus}</Badge>
-              <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">{formData.premiumStatus}</Badge>
-            </div>
-          </div>
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div><h1 className="text-3xl font-bold text-slate-900">Company Profile</h1><p className="text-slate-500">Manage your company information.</p></div>
+      <Card className="bg-white rounded-xl"><CardHeader><CardTitle className="text-slate-900">Company Information</CardTitle></CardHeader><CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-700">
+        <p><span className="font-semibold text-slate-900">Company Name:</span> {fallback(formData.companyName)}</p>
+        <p><span className="font-semibold text-slate-900">Industry:</span> {fallback(formData.industry)}</p>
+        <p><span className="font-semibold text-slate-900">Location:</span> {fallback(formData.location)}</p>
+        <p><span className="font-semibold text-slate-900">Company Size:</span> {fallback(formData.companySize)}</p>
+        <p><span className="font-semibold text-slate-900">Website:</span> {fallback(formData.website)}</p>
+        <p><span className="font-semibold text-slate-900">Representative:</span> {readonlyData.representativeName}</p>
+        <p><span className="font-semibold text-slate-900">Representative Email:</span> {readonlyData.representativeEmail}</p>
+        <p><span className="font-semibold text-slate-900">Representative Job Title:</span> {fallback(formData.representativeJobTitle)}</p>
+        <p className="md:col-span-2"><span className="font-semibold text-slate-900">Description:</span> {fallback(formData.description)}</p>
+      </CardContent></Card>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Location</p>
-              <p className="text-sm text-slate-800">{formData.location}</p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Company Size</p>
-              <p className="text-sm text-slate-800">{formData.companySize}</p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Website</p>
-              <a href={formData.website} className="text-sm text-blue-600 hover:underline" target="_blank" rel="noreferrer">
-                {formData.website}
-              </a>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Average Evaluation Score</p>
-              <p className="text-sm text-slate-800">{formData.averageScore}</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Company Description</p>
-            <p className="text-sm leading-6 text-slate-700">{formData.description}</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-xl border-slate-200 bg-white">
-        <CardHeader>
-          <CardTitle className="text-slate-900">Edit Company Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input value={formData.companyName} onChange={(event) => onInputChange("companyName", event.target.value)} placeholder="Company Name" />
-            <Input value={formData.industry} onChange={(event) => onInputChange("industry", event.target.value)} placeholder="Industry" />
-            <Input value={formData.location} onChange={(event) => onInputChange("location", event.target.value)} placeholder="Location" />
-            <Input value={formData.companySize} onChange={(event) => onInputChange("companySize", event.target.value)} placeholder="Company Size" />
-            <Input value={formData.website} onChange={(event) => onInputChange("website", event.target.value)} placeholder="Website" />
-            <Input value={formData.averageScore} onChange={(event) => onInputChange("averageScore", event.target.value)} placeholder="Average Evaluation Score" />
-            <Input value={formData.representativeName} onChange={(event) => onInputChange("representativeName", event.target.value)} placeholder="Representative Name" />
-            <Input value={formData.representativeEmail} onChange={(event) => onInputChange("representativeEmail", event.target.value)} placeholder="Representative Email" />
-            <Input value={formData.representativeJobTitle} onChange={(event) => onInputChange("representativeJobTitle", event.target.value)} placeholder="Representative Job Title" />
-            <Input value={formData.approvalStatus} onChange={(event) => onInputChange("approvalStatus", event.target.value)} placeholder="Approval Status" />
-            <Input value={formData.premiumStatus} onChange={(event) => onInputChange("premiumStatus", event.target.value)} placeholder="Premium Status" />
-            <Input value={formData.description} onChange={(event) => onInputChange("description", event.target.value)} placeholder="Company Description" />
-          </div>
-
-          <div className="pt-2">
-            <Button onClick={saveChanges} className="bg-blue-600 text-white hover:bg-blue-700">
-              Save changes
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <Card className="bg-white rounded-xl"><CardHeader><CardTitle className="text-slate-900">Edit Profile</CardTitle></CardHeader><CardContent className="space-y-4">
+        <Input value={formData.companyName} onChange={(e) => onChange("companyName", e.target.value)} placeholder="Company Name" />
+        <Input value={formData.industry} onChange={(e) => onChange("industry", e.target.value)} placeholder="Industry" />
+        <Input value={formData.location} onChange={(e) => onChange("location", e.target.value)} placeholder="Location" />
+        <Input value={formData.companySize} onChange={(e) => onChange("companySize", e.target.value)} placeholder="Company Size" />
+        <Input value={formData.website} onChange={(e) => onChange("website", e.target.value)} placeholder="Website" />
+        <Input value={formData.representativeJobTitle} onChange={(e) => onChange("representativeJobTitle", e.target.value)} placeholder="Representative Job Title" />
+        <textarea value={formData.description} onChange={(e) => onChange("description", e.target.value)} className="w-full min-h-24 rounded-md border border-slate-200 px-3 py-2" placeholder="Company Description" />
+        <Button onClick={saveChanges} className="bg-blue-600 text-white hover:bg-blue-700">Save changes</Button>
+      </CardContent></Card>
     </div>
   );
 };
