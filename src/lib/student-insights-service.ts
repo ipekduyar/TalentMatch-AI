@@ -37,6 +37,7 @@ const DOMAIN_TEMPLATES: DomainTemplate[] = [
   { domain: "Law / Policy / International Relations", keywords: ["law","legal","lawyer","legal intern","legal research","legal writing","contract","contract review","compliance","regulation","policy","policy analysis","corporate law","commercial law","labor law","employment law","data protection","kvkk","gdpr","case analysis","court","litigation","dispute resolution","international law","political science","international relations","public affairs","diplomacy","legal memo","hukuk","avukat","sözleşme","uyum","mevzuat","dava","politika","uluslararası ilişkiler","siyaset bilimi"], requiredSkills: ["Legal Research","Contract Review","Legal Writing","Case Analysis","Compliance","Policy Analysis","Corporate Law","Commercial Law","Labor Law","Data Protection","KVKK","GDPR","Critical Thinking","Academic Writing","Client Communication"], roles: ["Legal Intern","Compliance Intern","Policy Research Intern","Corporate Law Intern","Data Protection Intern","Public Affairs Intern","International Relations Intern"], resources: [R({ title: "United Nations Resources", provider: "UN", url: "https://www.un.org/en/our-work", type: "Soft Skill", level: "Beginner", cost_type: "Free", description: "UN content may help with global policy and governance context." }), R({ title: "EU Learning Corner", provider: "European Union", url: "https://learning-corner.learning.europa.eu/index_en", type: "Soft Skill", level: "Beginner", cost_type: "Free", description: "EU materials can support policy awareness and institutional literacy." }), R({ title: "Coursera Law", provider: "Coursera", url: "https://www.coursera.org/browse/social-sciences/law", type: "Soft Skill", level: "Intermediate", cost_type: "Audit available", description: "Law catalog courses may help strengthen legal foundations." }), R({ title: "Purdue OWL", provider: "Purdue OWL", url: "https://owl.purdue.edu/", type: "Soft Skill", level: "Beginner", cost_type: "Free", description: "Academic writing guidance is useful for legal writing practice." })] },
   { domain: "General / Early Career", keywords: [], requiredSkills: ["Communication","Excel","Research","Presentation","Teamwork","Time Management","Problem Solving","Reporting"], roles: ["General Intern","Project Intern","Operations Intern","Research Intern"], resources: [R({ title: "Google Digital Garage", provider: "Google", url: "https://learndigital.withgoogle.com/digitalgarage", type: "Soft Skill", level: "Beginner", cost_type: "Free", description: "General digital and professional skill modules for early career learners." }), R({ title: "Coursera Career Success", provider: "Coursera", url: "https://www.coursera.org/learn/career-success", type: "Soft Skill", level: "Beginner", cost_type: "Audit available", description: "Career development course focused on communication and employability skills." }), R({ title: "Microsoft Excel Support", provider: "Microsoft", url: "https://support.microsoft.com/excel", type: "Technical", level: "Beginner", cost_type: "Free", description: "Official tutorials and help pages for practical spreadsheet skills." })] },
 ];
+const GENERAL_TEMPLATE = DOMAIN_TEMPLATES.find((t) => t.domain === "General / Early Career") ?? DOMAIN_TEMPLATES[DOMAIN_TEMPLATES.length - 1];
 
 // rest unchanged
 export const getCurrentStudentId = async (): Promise<string | null> => { /*...*/
@@ -55,6 +56,9 @@ export const getLatestStudentCvAnalysis = async (): Promise<StudentCvAnalysis | 
 };
 
 export const detectStudentDomain = (analysis: StudentCvAnalysis | null) => {
+  if (!DOMAIN_TEMPLATES.length) {
+    return { domain: "General / Early Career", confidence: 40, matchedKeywords: [], suggestedRoles: [] };
+  }
   const roles = safe(analysis?.suggested_roles);
   const skills = safe(analysis?.extracted_skills);
   const rolesText = norm(roles.join(" "));
@@ -94,27 +98,61 @@ export const detectStudentDomain = (analysis: StudentCvAnalysis | null) => {
   return { domain, confidence, matchedKeywords: top?.matched ?? [], suggestedRoles: analysis?.suggested_roles ?? [] };
 };
 
-export const getDomainSkillTemplate = (domain: string) => {
+const findTemplateByDomainContains = (needle: string) =>
+  DOMAIN_TEMPLATES.find((d) => norm(d.domain).includes(norm(needle)));
+
+export const getDomainSkillTemplate = (domain: string | null | undefined) => {
+  if (!DOMAIN_TEMPLATES.length) return GENERAL_TEMPLATE;
+  if (!domain) return GENERAL_TEMPLATE;
   const exact = DOMAIN_TEMPLATES.find((d) => d.domain === domain);
   if (exact) return exact;
   const v = norm(domain);
-  if (v.includes("law")) return DOMAIN_TEMPLATES.find((d) => d.domain.includes("Law"))!;
-  if (v.includes("psychology") || v.includes("hr")) return DOMAIN_TEMPLATES.find((d) => d.domain.includes("Psychology"))!;
-  if (v.includes("data") || v.includes("ai")) return DOMAIN_TEMPLATES.find((d) => d.domain.includes("Data Science"))!;
-  if (v.includes("software") || v.includes("computer")) return DOMAIN_TEMPLATES.find((d) => d.domain.includes("Software"))!;
-  return DOMAIN_TEMPLATES[DOMAIN_TEMPLATES.length - 1];
+  const fromKeywords = (keywords: string[], templateNeedles: string[]) =>
+    keywords.some((k) => v.includes(k))
+      ? templateNeedles.map((needle) => findTemplateByDomainContains(needle)).find(Boolean)
+      : null;
+
+  return (
+    fromKeywords(["law", "policy", "international relations"], ["law"]) ??
+    fromKeywords(["psychology", "hr", "people"], ["psychology", "hr", "people"]) ??
+    fromKeywords(["finance", "economics", "accounting"], ["finance", "economics", "accounting"]) ??
+    fromKeywords(["marketing", "communication", "media"], ["marketing", "communication", "media"]) ??
+    fromKeywords(["education", "teaching", "guidance"], ["education", "teaching", "guidance"]) ??
+    fromKeywords(["design", "ux", "visual"], ["design", "ux", "visual"]) ??
+    fromKeywords(["mechanical"], ["mechanical"]) ??
+    fromKeywords(["electrical", "electronics"], ["electrical", "electronics"]) ??
+    fromKeywords(["civil", "architecture", "construction"], ["civil", "architecture", "construction"]) ??
+    fromKeywords(["biomedical", "biotechnology", "life sciences"], ["biomedical", "biotechnology", "life sciences"]) ??
+    fromKeywords(["environmental", "sustainability", "energy"], ["environmental", "sustainability", "energy"]) ??
+    fromKeywords(["mechatronics", "robotics", "automation"], ["mechatronics", "robotics", "automation"]) ??
+    fromKeywords(["chemical", "process", "r&d"], ["chemical", "process", "r&d"]) ??
+    fromKeywords(["industrial", "operations", "supply chain"], ["industrial", "operations", "supply chain"]) ??
+    fromKeywords(["business", "strategy", "product"], ["business", "strategy", "product"]) ??
+    fromKeywords(["data", "ai", "analytics"], ["data science", "ai", "analytics"]) ??
+    fromKeywords(["software", "computer", "web"], ["software", "computer", "web"]) ??
+    GENERAL_TEMPLATE
+  );
 };
+const getSafeTemplate = (domain: string | null | undefined) => getDomainSkillTemplate(domain) ?? GENERAL_TEMPLATE;
 
 export const generateSkillGaps = (analysis: StudentCvAnalysis | null) => {
-  const det = detectStudentDomain(analysis); const template = det.confidence < 55 ? getDomainSkillTemplate("General / Early Career") : getDomainSkillTemplate(det.domain);
+  const det = detectStudentDomain(analysis); const template = getSafeTemplate(det.confidence < 55 ? "General / Early Career" : det.domain);
+  const requiredSkills = template.requiredSkills?.length ? template.requiredSkills : (GENERAL_TEMPLATE?.requiredSkills ?? []);
+  const roles = template.roles ?? [];
+  const resources = template.resources ?? [];
   const have = new Set(safe(analysis?.extracted_skills).map(l));
-  const gaps = template.requiredSkills.filter(s => !have.has(l(s))).slice(0,8).map((skill,i)=>({ skill, currentLevel: Math.max(1, 3-i%3), targetLevel: 4, urgency: i<3?"High":i<6?"Medium":"Low", reason: safe(analysis?.weaknesses)[0] || `This is frequently required in ${det.domain}.`, relatedRoles: template.roles.slice(0,3), resources: template.resources.slice(0,3) }));
-  return gaps.length ? gaps : template.requiredSkills.slice(0,3).map(skill=>({ skill,currentLevel:2,targetLevel:4,urgency:"Medium",reason:"Foundation building.",relatedRoles:template.roles.slice(0,2),resources:template.resources.slice(0,2)}));
+  const gaps = requiredSkills.filter(s => !have.has(l(s))).slice(0,8).map((skill,i)=>({ skill, currentLevel: Math.max(1, 3-i%3), targetLevel: 4, urgency: i<3?"High":i<6?"Medium":"Low", reason: safe(analysis?.weaknesses)[0] || `This is frequently required in ${det.domain}.`, relatedRoles: roles.slice(0,3), resources: resources.slice(0,3) }));
+  return gaps.length ? gaps : requiredSkills.slice(0,3).map(skill=>({ skill,currentLevel:2,targetLevel:4,urgency:"Medium",reason:"Foundation building.",relatedRoles:roles.slice(0,2),resources:resources.slice(0,2)}));
 };
 
 export const generateLearningPath = (analysis: StudentCvAnalysis | null) => {
-  const det = detectStudentDomain(analysis); const template = det.confidence < 55 ? getDomainSkillTemplate("General / Early Career") : getDomainSkillTemplate(det.domain); const gaps = generateSkillGaps(analysis);
-  const resources = [...template.resources, ...getDomainSkillTemplate("General / Early Career").resources].slice(0,12).map((r, idx)=>({ id:`res-${idx}-${r.title}`,...r, skill: gaps[idx % gaps.length]?.skill ?? template.requiredSkills[0] }));
+  const det = detectStudentDomain(analysis);
+  const template = getSafeTemplate(det.confidence < 55 ? "General / Early Career" : det.domain);
+  const templateResources = template.resources ?? [];
+  const generalResources = GENERAL_TEMPLATE?.resources ?? [];
+  const gaps = generateSkillGaps(analysis) ?? [];
+  const fallbackSkill = template.requiredSkills?.[0] ?? "Communication";
+  const resources = [...templateResources, ...generalResources].slice(0,12).map((r, idx)=>({ id:`res-${idx}-${r.title}`,...r, skill: gaps.length ? gaps[idx % gaps.length]?.skill ?? fallbackSkill : fallbackSkill }));
   return { domain: det.domain, resources, roadmap: { week: resources.slice(0,3), month: resources.slice(3,7), quarter: resources.slice(7,12) } };
 };
 export const generateProjectSuggestions = (analysis: StudentCvAnalysis | null) => generateSkillGaps(analysis).slice(0,4).map((g, i) => `${i + 1}. Build a portfolio project that demonstrates ${g.skill} for ${g.relatedRoles[0]}.`);
