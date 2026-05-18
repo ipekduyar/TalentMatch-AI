@@ -6,6 +6,27 @@ import { toast } from "sonner";
 import { getCurrentCompanyContext, updateCompanyProfile } from "@/lib/company-profile-service";
 
 const fallback = (value?: string | null) => (value && value.trim() ? value : "Not provided");
+const COMPANY_SIZE_OPTIONS = [
+  "1-10 employees",
+  "11-50 employees",
+  "51-200 employees",
+  "201-500 employees",
+  "501-1000 employees",
+  "1000+ employees",
+] as const;
+
+const LEGACY_COMPANY_SIZE_MAP: Record<string, (typeof COMPANY_SIZE_OPTIONS)[number]> = {
+  startup: "1-10 employees",
+  sme: "11-50 employees",
+  enterprise: "1000+ employees",
+};
+
+const normalizeCompanySize = (value?: string | null) => {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  if (COMPANY_SIZE_OPTIONS.includes(trimmed as (typeof COMPANY_SIZE_OPTIONS)[number])) return trimmed;
+  return LEGACY_COMPANY_SIZE_MAP[trimmed.toLowerCase()] ?? "11-50 employees";
+};
 
 export const CompanyProfilePage = () => {
   const [loading, setLoading] = useState(true);
@@ -23,7 +44,7 @@ export const CompanyProfilePage = () => {
           companyName: context.company.name ?? "",
           industry: context.company.industry ?? "",
           location: context.company.location ?? "",
-          companySize: context.company.size ?? "",
+          companySize: normalizeCompanySize(context.company.size),
           website: context.company.website ?? "",
           representativeJobTitle: context.representative.job_title ?? "",
         });
@@ -82,7 +103,15 @@ export const CompanyProfilePage = () => {
         <Input value={formData.companyName} onChange={(e) => onChange("companyName", e.target.value)} placeholder="Company Name" />
         <Input value={formData.industry} onChange={(e) => onChange("industry", e.target.value)} placeholder="Industry" />
         <Input value={formData.location} onChange={(e) => onChange("location", e.target.value)} placeholder="Location" />
-        <Input value={formData.companySize} onChange={(e) => onChange("companySize", e.target.value)} placeholder="Company Size" />
+        <select
+          value={formData.companySize}
+          onChange={(e) => onChange("companySize", e.target.value)}
+          className="h-10 border border-input bg-background px-3 py-2 text-sm ring-offset-background rounded-md"
+        >
+          {COMPANY_SIZE_OPTIONS.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
         <Input value={formData.website} onChange={(e) => onChange("website", e.target.value)} placeholder="Website" />
         <Input value={formData.representativeJobTitle} onChange={(e) => onChange("representativeJobTitle", e.target.value)} placeholder="Representative Job Title" />
         <Button onClick={saveChanges} className="bg-blue-600 text-white hover:bg-blue-700">Save changes</Button>
