@@ -160,46 +160,78 @@ const buildFallbackAnalysis = (cvText: string): AnalysisPayload => {
   };
 };
 
-const extractPdfText = async (buffer: Buffer): Promise<string> => {
-  try {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(buffer),
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      disableFontFace: true,
-    });
-    const pdf = await loadingTask.promise;
-    const pageTexts: string[] = [];
+const MIN_READABLE_PDF_TEXT_LENGTH = 100;
 
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
-        .join(" ")
-        .trim();
+const normalizeExtractedPdfText = (input: string): string =>
+  input
+    .replace(/\u0000/g, "")
+    .replace(/[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g, " ")
+    .replace(/[\u00AD\u2010\u2011\u2212]/g, "-")
+    .replace(/\r\n/g, "\n")
+    .replace(/[\t\f\v]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/ {2,}/g, " ")
+    .trim();
 
-      if (pageText) {
-        pageTexts.push(pageText);
-      }
+const extractPdfTextWithPdfJs = async (buffer: Buffer): Promise<string> => {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    disableFontFace: true,
+  });
+  const pdf = await loadingTask.promise;
+  const pageTexts: string[] = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const pageText = content.items
+      .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
+      .join(" ")
+      .trim();
+
+    if (pageText) {
+      pageTexts.push(pageText);
     }
-
-    const extractedText = pageTexts.join("\n").trim();
-
-    if (extractedText.length < 20) {
-      throw new Error("No readable text found in this PDF. Please upload a text-based PDF or DOCX file.");
-    }
-
-    return extractedText;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("No readable text found")) {
-      throw error;
-    }
-
-    console.error("PDF extraction failed", error);
-    throw new Error("PDF text could not be extracted. Please upload a text-based PDF or DOCX file.");
   }
+
+  return pageTexts.join("\n");
+};
+
+const extractPdfTextWithPdfParse = async (buffer: Buffer): Promise<string> => {
+  const pdfParse = (await import("pdf-parse")).default;
+  const parsed = await pdfParse(buffer);
+  return parsed.text ?? "";
+};
+
+const extractPdfText = async (buffer: Buffer): Promise<string> => {
+  const extractors: Array<{ name: string; run: () => Promise<string> }> = [
+    { name: "pdfjs", run: () => extractPdfTextWithPdfJs(buffer) },
+    { name: "pdf-parse", run: () => extractPdfTextWithPdfParse(buffer) },
+  ];
+
+  for (const extractor of extractors) {
+    try {
+      const extractedText = await extractor.run();
+      const normalizedText = normalizeExtractedPdfText(extractedText);
+
+      if (normalizedText.length >= MIN_READABLE_PDF_TEXT_LENGTH) {
+        console.log("PDF extraction succeeded", { method: extractor.name, length: normalizedText.length });
+        return normalizedText;
+      }
+
+      console.warn("PDF extraction returned short text", {
+        method: extractor.name,
+        length: normalizedText.length,
+      });
+    } catch (error) {
+      console.error("PDF extraction primary method failed", error);
+    }
+  }
+
+  throw new Error("No readable text found in this PDF. Please upload a text-based PDF or DOCX file.");
 };
 
 const extractCvText = async (fileName: string, mimeType: string | null, buffer: Buffer): Promise<string> => {
