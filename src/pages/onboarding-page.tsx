@@ -14,6 +14,22 @@ import { supabase } from "@/lib/supabase";
 
 const DEPARTMENT_OPTIONS = ["Chemical Engineering","Mechanical Engineering","Electrical/Electronics Engineering","Computer Engineering","Industrial Engineering","Civil Engineering","Environmental Engineering","Biomedical Engineering","Materials/Metallurgical Engineering","Aerospace/Aeronautical Engineering","Mechatronics/Robotics","Management Engineering","Business Administration","Economics","Finance","Accounting","Marketing","Psychology","Human Resources","Law","Political Science","International Relations","Education","Guidance and Psychological Counseling","Communication","Journalism","Translation/Interpretation","Architecture","Interior Architecture","Design/UX","Nursing","Medicine/Health Sciences","Biology/Biotechnology","General / Other"];
 
+const estimateSkillLevel = (skill: string, analysis: CvAnalysisResult | null): number => {
+  if (!analysis) return 3;
+  const normalizedSkill = skill.trim().toLowerCase();
+  if (!normalizedSkill) return 3;
+
+  const strengthsText = [
+    ...(analysis.strengths ?? []),
+    ...(analysis.improvement_suggestions ?? []),
+  ].join(" ").toLowerCase();
+  const weaknessesText = (analysis.weaknesses ?? []).join(" ").toLowerCase();
+
+  if (weaknessesText.includes(normalizedSkill)) return 2;
+  if (strengthsText.includes(normalizedSkill)) return 4;
+  return 3;
+};
+
 const getDepartmentCareerGoals = (department: string) => {
   const value = department.toLowerCase();
   if (value.includes("chemical")) return ["R&D Intern", "Process Engineering Intern", "Quality Control Intern", "Laboratory Intern", "Production Intern"];
@@ -70,10 +86,15 @@ export const OnboardingPage = () => {
     setSkillLevels((currentLevels) => {
       const nextLevels = { ...currentLevels };
       let changed = false;
-      step3Skills.forEach((skill) => { if (!nextLevels[skill]) { nextLevels[skill] = 3; changed = true; } });
+      step3Skills.forEach((skill) => {
+        if (!nextLevels[skill]) {
+          nextLevels[skill] = estimateSkillLevel(skill, analysisResult);
+          changed = true;
+        }
+      });
       return changed ? nextLevels : currentLevels;
     });
-  }, [step3Skills]);
+  }, [step3Skills, analysisResult]);
 
   const refreshLatestDocumentId = async () => {
     if (!supabase) return;
@@ -116,7 +137,10 @@ export const OnboardingPage = () => {
       setAnalysisResult(result);
       setSelectedCareerGoal(null);
       const extractedSkills = result.extracted_skills?.filter((skill) => skill.trim().length > 0) ?? [];
-      setSkillLevels(extractedSkills.reduce<Record<string, number>>((acc, skill) => { acc[skill] = 3; return acc; }, {}));
+      setSkillLevels(extractedSkills.reduce<Record<string, number>>((acc, skill) => {
+        acc[skill] = estimateSkillLevel(skill, result);
+        return acc;
+      }, {}));
       setUploadStatus("uploaded");
       toast.success("CV analysis completed.");
     } catch (error) {
@@ -213,7 +237,10 @@ export const OnboardingPage = () => {
           <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
             {step === 1 && <div className="space-y-6"><div className="text-center space-y-2"><h1 className="text-3xl font-bold text-slate-900">Academic Background</h1><p className="text-slate-500">Tell us where you are studying and what you've achieved.</p></div><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div className="space-y-2"><label className="text-sm font-semibold">University *</label><Input value={academicInfo.university} onChange={(e) => setAcademicInfo((p) => ({ ...p, university: e.target.value }))} placeholder="Istanbul Technical University" /></div><div className="space-y-2"><label className="text-sm font-semibold">Department *</label><Input value={academicInfo.department} list="department-options" onChange={(e) => setAcademicInfo((p) => ({ ...p, department: e.target.value }))} placeholder="Industrial Engineering" /><datalist id="department-options">{DEPARTMENT_OPTIONS.map((option) => <option key={option} value={option} />)}</datalist></div><div className="space-y-2"><label className="text-sm font-semibold">Academic Year *</label><select value={academicInfo.academicYear} onChange={(e) => setAcademicInfo((p) => ({ ...p, academicYear: e.target.value }))} className="w-full p-2 border rounded-md"><option value="">Select year</option><option value="1">Year 1</option><option value="2">Year 2</option><option value="3">Year 3</option><option value="4">Year 4</option><option value="5">Year 5+</option></select></div><div className="space-y-2"><label className="text-sm font-semibold">GPA (optional)</label><Input value={academicInfo.gpa} onChange={(e) => setAcademicInfo((p) => ({ ...p, gpa: e.target.value }))} placeholder="3.50" type="number" min="0" max="4" step="0.01" /></div><div className="space-y-2 md:col-span-2"><label className="text-sm font-semibold">Student Number (optional)</label><Input value={academicInfo.studentNumber} onChange={(e) => setAcademicInfo((p) => ({ ...p, studentNumber: e.target.value }))} placeholder="Student number" /></div></div></div>}
             {step === 2 && <div className="space-y-6"><div className="text-center space-y-2"><h1 className="text-3xl font-bold text-slate-900">Upload your CV</h1><p className="text-slate-500">Our AI will automatically extract your skills to build your profile.</p></div><label className="block border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer group"><input type="file" accept=".pdf,.doc,.docx" className="sr-only" onChange={handleCvFileChange} /><div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform"><Upload className="w-8 h-8 text-blue-600" /></div><h3 className="font-bold text-lg">{cvMetadata ? "Replace your CV" : "Click or drag PDF here"}</h3><p className="text-sm text-slate-400">PDF up to 10MB</p></label>{cvMetadata && <Card className="border-blue-100"><CardContent className="pt-6 space-y-3 text-sm"><p><span className="font-semibold">File:</span> {cvMetadata.fileName}</p><p><span className="font-semibold">Size:</span> {formatCvFileSize(cvMetadata.fileSizeBytes)}</p><p><span className="font-semibold">Selected:</span> {uploadTimestamp}</p><p><span className="font-semibold">Status:</span> {uploadStatusText}</p><div><p className="font-semibold mb-2">Parsed skills summary:</p>{analysisResult?.extracted_skills?.length ? <div className="flex flex-wrap gap-2">{analysisResult.extracted_skills.map((skill) => <span key={skill} className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">{skill}</span>)}</div> : <p className="text-slate-500">Analyze your CV to verify extracted skills.</p>}</div>{uploadStatus === "uploaded" && documentId && <Button type="button" onClick={handleAnalyzeCv} disabled={analysisLoading}>{analysisLoading ? "Analyzing CV..." : "Analyze CV"}</Button>}{analysisError && <p className="text-sm text-red-600">{analysisError}</p>}<Button type="button" variant="outline" onClick={handleRemoveCv}>Remove CV</Button></CardContent></Card>}</div>}
-            {step === 3 && <div className="space-y-6"><div className="text-center space-y-2"><h1 className="text-3xl font-bold text-slate-900">Verify your skills</h1><p className="text-slate-500">{step3Skills.length > 0 ? `We found ${step3Skills.length} skills in your CV. Adjust your proficiency levels.` : "Analyze your CV to verify extracted skills."}</p></div><div className="space-y-4">{step3Skills.map((skill) => <div key={skill} className="p-4 border rounded-xl flex items-center justify-between"><span className="font-bold">{skill}</span><div className="flex items-center space-x-2">{[1,2,3,4,5].map(i => <button type="button" key={i} onClick={() => setSkillLevels((prev) => ({ ...prev, [skill]: i }))} className={`w-3 h-3 rounded-full transition-colors ${i <= (skillLevels[skill] ?? 3) ? 'bg-blue-600' : 'bg-slate-100'}`}></button>)}</div></div>)}</div></div>}
+            {step === 3 && <div className="space-y-6"><div className="text-center space-y-2"><h1 className="text-3xl font-bold text-slate-900">Verify your skills</h1><p className="text-slate-500">{step3Skills.length > 0 ? `We found ${step3Skills.length} skills in your CV. Adjust your proficiency levels.` : "Analyze your CV to verify extracted skills."}
+                {step3Skills.length > 0 && (
+                  <span className="block text-xs text-slate-400">Initial levels are estimated from your CV. You can adjust them manually.</span>
+                )}</p></div><div className="space-y-4">{step3Skills.map((skill) => <div key={skill} className="p-4 border rounded-xl flex items-center justify-between"><span className="font-bold">{skill}</span><div className="flex items-center space-x-2">{[1,2,3,4,5].map(i => <button type="button" key={i} onClick={() => setSkillLevels((prev) => ({ ...prev, [skill]: i }))} className={`w-3 h-3 rounded-full transition-colors ${i <= (skillLevels[skill] ?? 3) ? 'bg-blue-600' : 'bg-slate-100'}`}></button>)}</div></div>)}</div></div>}
             {step === 4 && <div className="space-y-6"><div className="text-center space-y-2"><h1 className="text-3xl font-bold text-slate-900">Your career goal</h1><p className="text-slate-500">{analysisResult ? "Based on your CV, these internship tracks may fit you." : "Suggestions based on your department and profile."}</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{step4CareerGoals.map((goal) => <button type="button" key={goal} onClick={() => setSelectedCareerGoal(goal)} className={`p-6 border rounded-2xl text-left transition-all active:scale-95 ${selectedCareerGoal === goal ? "border-blue-600 bg-blue-50" : "hover:border-blue-600 hover:bg-blue-50"}`}><p className="font-bold text-slate-900">{goal}</p></button>)}</div></div>}
             <div className="flex items-center justify-between pt-8 border-t"><Button variant="ghost" onClick={handleBack} className={step === 1 ? 'invisible' : ''}><ChevronLeft className="w-4 h-4 mr-2" /> Back</Button><Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 px-8" disabled={(step===1&&savingAcademic)||(step===2&&uploadStatus==="uploading")||(step===4&&!selectedCareerGoal)}>{step === 4 ? 'Finish' : 'Continue'} <ChevronRight className="w-4 h-4 ml-2" /></Button></div>
           </motion.div>}
