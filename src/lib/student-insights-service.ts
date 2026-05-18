@@ -22,6 +22,16 @@ type Resource = {
   description: string;
 };
 type DomainTemplate = { domain: string; keywords: string[]; requiredSkills: string[]; roles: string[]; resources: Resource[] };
+type SkillGapUrgency = "High" | "Medium" | "Low";
+type GeneratedSkillGap = {
+  skill: string;
+  currentLevel: number;
+  targetLevel: number;
+  urgency: SkillGapUrgency;
+  reason: string;
+  relatedRoles: string[];
+  resources: Resource[];
+};
 
 const safe = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 const l = (v: string) => v.toLowerCase();
@@ -38,6 +48,35 @@ const DOMAIN_TEMPLATES: DomainTemplate[] = [
   { domain: "General / Early Career", keywords: [], requiredSkills: ["Communication","Excel","Research","Presentation","Teamwork","Time Management","Problem Solving","Reporting"], roles: ["General Intern","Project Intern","Operations Intern","Research Intern"], resources: [R({ title: "Google Digital Garage", provider: "Google", url: "https://learndigital.withgoogle.com/digitalgarage", type: "Soft Skill", level: "Beginner", cost_type: "Free", description: "General digital and professional skill modules for early career learners." }), R({ title: "Coursera Career Success", provider: "Coursera", url: "https://www.coursera.org/learn/career-success", type: "Soft Skill", level: "Beginner", cost_type: "Audit available", description: "Career development course focused on communication and employability skills." }), R({ title: "Microsoft Excel Support", provider: "Microsoft", url: "https://support.microsoft.com/excel", type: "Technical", level: "Beginner", cost_type: "Free", description: "Official tutorials and help pages for practical spreadsheet skills." })] },
 ];
 const GENERAL_TEMPLATE = DOMAIN_TEMPLATES.find((t) => t.domain === "General / Early Career") ?? DOMAIN_TEMPLATES[DOMAIN_TEMPLATES.length - 1];
+const HR_RESOURCES: Resource[] = [
+  R({ title: "SHRM Resources", provider: "SHRM", url: "https://www.shrm.org/", type: "Soft Skill", level: "Intermediate", cost_type: "Freemium", description: "HR practice articles and templates for recruitment and people operations workflows." }),
+  R({ title: "APA Education & Career", provider: "APA", url: "https://www.apa.org/education-career", type: "Soft Skill", level: "Beginner", cost_type: "Free", description: "Career pathways and psychology-informed guidance for workplace-facing roles." }),
+  R({ title: "Coursera Leadership and Management", provider: "Coursera", url: "https://www.coursera.org/browse/business/leadership-and-management", type: "Soft Skill", level: "Intermediate", cost_type: "Audit available", description: "Leadership, team dynamics, and people development courses." }),
+  R({ title: "Microsoft Excel Support", provider: "Microsoft", url: "https://support.microsoft.com/excel", type: "Technical", level: "Intermediate", cost_type: "Free", description: "Reporting and analytics-oriented Excel guides for HR dashboards." }),
+];
+const DOMAIN_REFINEMENTS: Record<string, { skills: string[]; reasons: string[]; roles?: string[]; resources?: Resource[] }> = {
+  "Psychology / HR / People Operations": {
+    skills: ["HR Analytics","Employee Relations","Psychological Assessment Awareness","Candidate Evaluation","Training & Development","Advanced Excel / Reporting","Organizational Development","Onboarding Process Design"],
+    reasons: [
+      "This strengthens your ability to evaluate candidates and support recruitment decisions with structured evidence.",
+      "This helps connect organizational psychology knowledge with practical HR workflows.",
+      "This improves your readiness for people operations and training roles."
+    ],
+    roles: ["HR Intern","Recruitment Intern","People Operations Intern","Organizational Psychology Intern","Training & Development Intern","Talent Acquisition Intern"],
+    resources: HR_RESOURCES
+  },
+  "Law / Policy / International Relations": { skills: ["GDPR","Legal Memo Writing","Contract Risk Analysis","Compliance Checklist Design","Policy Brief Writing","Client Communication"], reasons: ["This strengthens legal risk identification in policy and contract workflows.","This improves your ability to produce structured legal arguments for professional audiences.","This helps translate regulation into practical compliance actions."] },
+  "Finance / Economics / Accounting": { skills: ["Financial Modeling","Valuation","Risk Analysis","Power BI Reporting","Budget Variance Analysis","Audit Documentation"], reasons: ["This supports clearer financial decision-making through structured analysis.","This improves your readiness for analyst tasks involving reporting and controls.","This strengthens your ability to present financial performance and risks to stakeholders."] },
+  "Chemical / Process Engineering / R&D": { skills: ["Process Validation","GMP Documentation","Aspen Plus Simulation","HPLC/FTIR Reporting","Laboratory Safety","Statistical Quality Control"], reasons: ["This aligns your profile with regulated process and quality requirements.","This improves technical reporting accuracy for lab and production environments.","This supports safe and data-driven experimentation in process settings."] },
+  "Software / Computer Engineering / Web Development": { skills: ["Testing","REST API","TypeScript","Git Workflow","Deployment","Database Design"], reasons: ["This improves your ability to ship reliable, production-ready software.","This strengthens collaboration and delivery discipline in engineering teams.","This helps connect coding skills with end-to-end product deployment."] },
+  "Data Science / AI / Statistics / Analytics": { skills: ["Feature Engineering","Model Evaluation","Data Visualization","SQL Joins","Power BI/Tableau","Statistics"], reasons: ["This improves model quality and interpretability in real datasets.","This strengthens your ability to communicate analytical findings to decision-makers.","This builds stronger foundations for robust experimentation and reporting."] },
+  "Mechanical Engineering": { skills: ["CAD Portfolio","ANSYS/FEA","Technical Drawing","Manufacturing Methods","Tolerance Analysis"], reasons: ["This strengthens practical design-readiness for mechanical project work.","This improves your ability to validate design decisions with simulation evidence.","This supports manufacturable and standards-aligned engineering output."] },
+  "Electrical / Electronics Engineering": { skills: ["PCB Design","Embedded C/C++","Signal Processing","Control Systems","Circuit Simulation"], reasons: ["This improves hands-on readiness for electronic product development.","This strengthens your ability to connect hardware behavior with system-level control.","This supports accurate prototyping and test-driven circuit refinement."] },
+  "Industrial Engineering / Operations / Supply Chain": { skills: ["Forecasting","Optimization Modeling","Lean/Six Sigma","Production Planning","KPI Dashboard"], reasons: ["This improves process efficiency analysis and planning decisions.","This strengthens your ability to optimize operational performance with data.","This supports measurable continuous-improvement initiatives."] },
+  "Marketing / Communication / Media": { skills: ["Google Analytics","SEO","Campaign Reporting","Content Strategy","Brand Analysis"], reasons: ["This improves evidence-based marketing planning and measurement.","This strengthens your ability to align content with audience and conversion goals.","This supports clearer communication of campaign performance insights."] },
+  "Design / UX / Visual Communication": { skills: ["User Research","Figma Prototyping","Design Systems","UX Writing","Usability Testing"], reasons: ["This strengthens end-user centered design decision-making.","This improves your ability to deliver consistent and testable interface solutions.","This helps connect visual work with measurable usability outcomes."] },
+  "Education / Teaching / Guidance": { skills: ["Lesson Planning","Assessment Design","Curriculum Design","Educational Technology","Classroom Management"], reasons: ["This improves instructional structure and learner outcome planning.","This strengthens your ability to evaluate learning progress with clear criteria.","This supports practical classroom and curriculum implementation readiness."] },
+};
 
 // rest unchanged
 export const getCurrentStudentId = async (): Promise<string | null> => { /*...*/
@@ -136,23 +175,71 @@ export const getDomainSkillTemplate = (domain: string | null | undefined) => {
 const getSafeTemplate = (domain: string | null | undefined) => getDomainSkillTemplate(domain) ?? GENERAL_TEMPLATE;
 
 export const generateSkillGaps = (analysis: StudentCvAnalysis | null) => {
-  const det = detectStudentDomain(analysis); const template = getSafeTemplate(det.confidence < 55 ? "General / Early Career" : det.domain);
+  const det = detectStudentDomain(analysis);
+  const confidentDomain = det.confidence >= 55;
+  const template = getSafeTemplate(confidentDomain ? det.domain : "General / Early Career");
+  const refinement = DOMAIN_REFINEMENTS[template.domain];
   const requiredSkills = template.requiredSkills?.length ? template.requiredSkills : (GENERAL_TEMPLATE?.requiredSkills ?? []);
-  const roles = template.roles ?? [];
-  const resources = template.resources ?? [];
-  const have = new Set(safe(analysis?.extracted_skills).map(l));
-  const gaps = requiredSkills.filter(s => !have.has(l(s))).slice(0,8).map((skill,i)=>({ skill, currentLevel: Math.max(1, 3-i%3), targetLevel: 4, urgency: i<3?"High":i<6?"Medium":"Low", reason: safe(analysis?.weaknesses)[0] || `This is frequently required in ${det.domain}.`, relatedRoles: roles.slice(0,3), resources: resources.slice(0,3) }));
-  return gaps.length ? gaps : requiredSkills.slice(0,3).map(skill=>({ skill,currentLevel:2,targetLevel:4,urgency:"Medium",reason:"Foundation building.",relatedRoles:roles.slice(0,2),resources:resources.slice(0,2)}));
+  const rolePool = refinement?.roles?.length ? refinement.roles : (template.roles ?? GENERAL_TEMPLATE.roles ?? []);
+  const resourcePool = refinement?.resources?.length ? refinement.resources : (template.resources ?? GENERAL_TEMPLATE.resources ?? []);
+  const extractedSkills = safe(analysis?.extracted_skills);
+  const strengths = safe(analysis?.strengths);
+  const have = extractedSkills.map(norm);
+  const strengthNorm = strengths.map(norm);
+  const matchesSkill = (source: string[], skill: string) => source.some((s) => overlaps(s, skill));
+  const missingRequired = requiredSkills.filter((skill) => !matchesSkill(have, skill));
+  const refinementCandidates = (refinement?.skills ?? []).filter((skill) => !matchesSkill(have, skill));
+  const skillsToUse = (missingRequired.length > 0 ? missingRequired : refinementCandidates).slice(0, 8);
+  const urgencyByIndex = (idx: number): SkillGapUrgency => (idx < 2 ? "High" : idx < 5 ? "Medium" : "Low");
+  const reasonFor = (idx: number, skill: string) => {
+    const domainReasons = refinement?.reasons ?? [];
+    if (domainReasons.length) return domainReasons[idx % domainReasons.length];
+    return `Improving ${skill} can increase your readiness for ${template.domain} internships.`;
+  };
+  const currentLevelFor = (skill: string) => {
+    if (matchesSkill(have, skill)) return 4;
+    if (strengthNorm.some((s) => includesLoose(s, skill) || includesLoose(skill, s))) return 4;
+    const relatedExtracted = extractedSkills.some((s) => overlaps(s, skill));
+    if (relatedExtracted) return 3;
+    return skill.includes("/") ? 2 : 1;
+  };
+  const targetLevelFor = (idx: number) => (idx < 3 ? 5 : 4);
+
+  const gaps: GeneratedSkillGap[] = skillsToUse.map((skill, idx) => ({
+    skill,
+    currentLevel: currentLevelFor(skill),
+    targetLevel: targetLevelFor(idx),
+    urgency: urgencyByIndex(idx),
+    reason: reasonFor(idx, skill),
+    relatedRoles: rolePool.slice(0, 6),
+    resources: resourcePool.slice(0, 4),
+  }));
+
+  if (gaps.length) return gaps;
+  const fallbackSkills = (refinement?.skills?.length ? refinement.skills : requiredSkills).slice(0, 6);
+  return fallbackSkills.map((skill, idx) => ({
+    skill,
+    currentLevel: 3,
+    targetLevel: targetLevelFor(idx),
+    urgency: urgencyByIndex(idx),
+    reason: reasonFor(idx, skill),
+    relatedRoles: rolePool.slice(0, 6),
+    resources: resourcePool.slice(0, 4),
+  }));
 };
 
 export const generateLearningPath = (analysis: StudentCvAnalysis | null) => {
   const det = detectStudentDomain(analysis);
-  const template = getSafeTemplate(det.confidence < 55 ? "General / Early Career" : det.domain);
+  const template = getSafeTemplate(det.confidence >= 55 ? det.domain : "General / Early Career");
+  const refinement = DOMAIN_REFINEMENTS[template.domain];
   const templateResources = template.resources ?? [];
+  const refinementResources = refinement?.resources ?? [];
   const generalResources = GENERAL_TEMPLATE?.resources ?? [];
   const gaps = generateSkillGaps(analysis) ?? [];
   const fallbackSkill = template.requiredSkills?.[0] ?? "Communication";
-  const resources = [...templateResources, ...generalResources].slice(0,12).map((r, idx)=>({ id:`res-${idx}-${r.title}`,...r, skill: gaps.length ? gaps[idx % gaps.length]?.skill ?? fallbackSkill : fallbackSkill }));
+  const prioritizedTemplateResources = refinementResources.length ? refinementResources : templateResources;
+  const resourcesBase = det.confidence >= 55 ? [...prioritizedTemplateResources, ...generalResources] : [...templateResources, ...generalResources];
+  const resources = resourcesBase.slice(0,12).map((r, idx)=>({ id:`res-${idx}-${r.title}`,...r, skill: gaps.length ? gaps[idx % gaps.length]?.skill ?? fallbackSkill : fallbackSkill }));
   return { domain: det.domain, resources, roadmap: { week: resources.slice(0,3), month: resources.slice(3,7), quarter: resources.slice(7,12) } };
 };
 export const generateProjectSuggestions = (analysis: StudentCvAnalysis | null) => generateSkillGaps(analysis).slice(0,4).map((g, i) => `${i + 1}. Build a portfolio project that demonstrates ${g.skill} for ${g.relatedRoles[0]}.`);
