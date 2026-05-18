@@ -53,10 +53,12 @@ export const OnboardingPage = () => {
   useEffect(() => {
     const loadStudentProfile = async () => {
       if (!supabase) return;
-      const { data: auth } = await supabase.auth.getUser();
-      const userId = auth.user?.id;
-      if (!userId) return;
-      const { data } = await supabase.from("students").select("university, department, student_number, academic_year, gpa, career_goal").eq("user_id", userId).maybeSingle();
+      const { data: authData } = await supabase.auth.getUser();
+      const authUserId = authData.user?.id;
+      if (!authUserId) return;
+      const { data: person } = await supabase.from("persons").select("person_id").eq("auth_user_id", authUserId).maybeSingle();
+      if (!person?.person_id) return;
+      const { data } = await supabase.from("students").select("university, department, student_number, academic_year, gpa, career_goal").eq("person_id", person.person_id).maybeSingle();
       if (!data) return;
       setAcademicInfo({ university: data.university ?? "", department: data.department ?? "", studentNumber: data.student_number ?? "", academicYear: data.academic_year ? String(data.academic_year) : "", gpa: typeof data.gpa === "number" ? String(data.gpa) : "" });
       if (data.career_goal) setSelectedCareerGoal(data.career_goal);
@@ -126,12 +128,46 @@ export const OnboardingPage = () => {
 
   const saveAcademicInfo = async () => {
     if (!supabase) return true;
-    const { data: auth } = await supabase.auth.getUser();
-    const userId = auth.user?.id;
-    if (!userId) return false;
+    const { data: authData } = await supabase.auth.getUser();
+    const authUserId = authData.user?.id;
+    if (!authUserId) return false;
+
+    const { data: person } = await supabase
+      .from("persons")
+      .select("person_id")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle();
+
+    if (!person?.person_id) {
+      toast.error("Student profile could not be found.");
+      return false;
+    }
+
     const gpaNumber = academicInfo.gpa.trim() ? Number(academicInfo.gpa) : null;
-    const { error } = await supabase.from("students").upsert({ user_id: userId, university: academicInfo.university.trim(), department: academicInfo.department.trim(), student_number: academicInfo.studentNumber.trim() || null, academic_year: Number(academicInfo.academicYear), gpa: Number.isFinite(gpaNumber as number) ? gpaNumber : null, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-    if (error) { toast.error(error.message); return false; }
+    const { data: updatedStudent, error } = await supabase
+      .from("students")
+      .update({
+        university: academicInfo.university.trim(),
+        department: academicInfo.department.trim(),
+        student_number: academicInfo.studentNumber.trim() || null,
+        academic_year: Number(academicInfo.academicYear),
+        gpa: Number.isFinite(gpaNumber as number) ? gpaNumber : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("person_id", person.person_id)
+      .select("person_id")
+      .maybeSingle();
+
+    if (error) {
+      toast.error(error.message);
+      return false;
+    }
+
+    if (!updatedStudent) {
+      toast.error("Student record could not be updated.");
+      return false;
+    }
+
     return true;
   };
 
@@ -150,9 +186,14 @@ export const OnboardingPage = () => {
     if (step === 4) {
       if (!selectedCareerGoal) { toast.error("Please select a career goal to continue."); return; }
       if (supabase) {
-        const { data: auth } = await supabase.auth.getUser();
-        const userId = auth.user?.id;
-        if (userId) await supabase.from("students").update({ career_goal: selectedCareerGoal, updated_at: new Date().toISOString() }).eq("user_id", userId);
+        const { data: authData } = await supabase.auth.getUser();
+        const authUserId = authData.user?.id;
+        if (authUserId) {
+          const { data: person } = await supabase.from("persons").select("person_id").eq("auth_user_id", authUserId).maybeSingle();
+          if (person?.person_id) {
+            await supabase.from("students").update({ career_goal: selectedCareerGoal, updated_at: new Date().toISOString() }).eq("person_id", person.person_id);
+          }
+        }
       }
       toast.success("Profile completed!");
       navigate('/dashboard');
