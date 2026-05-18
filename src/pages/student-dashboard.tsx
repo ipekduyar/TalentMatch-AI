@@ -3,22 +3,9 @@ import { useCurrentUser } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Briefcase, 
-  CheckCircle, 
-  Target, 
-  UserCheck, 
-  ArrowRight,
-  TrendingUp,
-  Clock,
-  History,
-  AlertCircle,
-  Brain,
-  Rocket
-} from "lucide-react";
+import { Briefcase, Target, ArrowRight, TrendingUp, Clock, History, AlertCircle, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { APPLICATIONS, POSTINGS } from "@/lib/mock-data";
-import { getActiveInternshipPostings, getLatestCompletedCvAnalysis, LatestCvAnalysis } from "@/lib/student-dashboard-service";
+import { getActiveInternshipPostings, getLatestCompletedCvAnalysis, getStudentDashboardActivityData, LatestCvAnalysis, StudentDashboardActivityData } from "@/lib/student-dashboard-service";
 import { InternshipPosting } from "@/lib/types";
 import { 
   ResponsiveContainer, 
@@ -32,16 +19,14 @@ import {
   YAxis, 
   Tooltip 
 } from "recharts";
-import { ChevronRight } from "lucide-react";
 
 export const StudentDashboard = () => {
   const { user, student } = useCurrentUser();
   const [analysis, setAnalysis] = useState<LatestCvAnalysis | null>(null);
   const [isInsightLoading, setIsInsightLoading] = useState(true);
-  const [postings, setPostings] = useState<InternshipPosting[]>(POSTINGS);
-  
-  const studentApps = APPLICATIONS.filter(a => a.student_id === student?.student_id);
-  const fallbackTopMatches = POSTINGS.slice(0, 3).map((p, i) => ({ ...p, score: [92, 85, 78][i] }));
+  const [postings, setPostings] = useState<InternshipPosting[]>([]);
+  const [activityData, setActivityData] = useState<StudentDashboardActivityData | null>(null);
+
 
   const fallbackSkillData = [
     { name: 'Python', value: 85 },
@@ -52,24 +37,19 @@ export const StudentDashboard = () => {
     { name: 'Design', value: 50 },
   ];
 
-  const progressData = [
-    { month: 'Jan', score: 65 },
-    { month: 'Feb', score: 68 },
-    { month: 'Mar', score: 75 },
-    { month: 'Apr', score: 82 },
-    { month: 'May', score: 90 },
-  ];
 
   useEffect(() => {
     const loadDashboardInsights = async () => {
       setIsInsightLoading(true);
       try {
-        const [latestAnalysis, activePostings] = await Promise.all([
+        const [latestAnalysis, activePostings, dashboardActivity] = await Promise.all([
           getLatestCompletedCvAnalysis(),
           getActiveInternshipPostings(),
+          getStudentDashboardActivityData(),
         ]);
         setAnalysis(latestAnalysis);
         setPostings(activePostings);
+        setActivityData(dashboardActivity);
       } catch (error) {
         console.error("Failed to load student dashboard insights", error);
       } finally {
@@ -88,13 +68,13 @@ export const StudentDashboard = () => {
     }));
   }, [analysis]);
 
-  const avgMatchScore = typeof analysis?.overall_score === "number" ? `${Math.round(analysis.overall_score)}%` : "82%";
-  const skillGapCount = analysis?.weaknesses?.length ? String(analysis.weaknesses.length) : "3";
+  const avgMatchScore = typeof analysis?.overall_score === "number" ? `${Math.round(analysis.overall_score)}%` : "0%";
+  const skillGapCount = analysis?.weaknesses?.length ? String(analysis.weaknesses.length) : "0";
   const skillGapTrend = analysis?.weaknesses?.length ? "From CV analysis" : "Action required";
   const bridgeSuggestion = analysis?.improvement_suggestions?.[0] || analysis?.weaknesses?.[0] || null;
 
   const topMatches = useMemo(() => {
-    if (!analysis) return fallbackTopMatches;
+    if (!analysis) return postings.slice(0, 3).map((p, i) => ({ ...p, score: [80, 76, 72][i] ?? 70 }));
 
     const roleKeywords = analysis.suggested_roles.map((r) => r.toLowerCase());
     const skillKeywords = analysis.extracted_skills.map((s) => s.toLowerCase());
@@ -138,7 +118,7 @@ export const StudentDashboard = () => {
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
-  }, [analysis, fallbackTopMatches, postings]);
+  }, [analysis, postings]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -181,9 +161,11 @@ export const StudentDashboard = () => {
         />
         <StatCard 
           title="Active Apps" 
-          value={studentApps.length} 
+          value={activityData?.applications.length ?? 0} 
           icon={Briefcase} 
-          trend="2 awaiting review" 
+          trend={(activityData?.applications.filter((app) => app.status === "submitted" || app.status === "pending").length ?? 0) > 0
+            ? `${activityData?.applications.filter((app) => app.status === "submitted" || app.status === "pending").length} awaiting review`
+            : "No pending applications"}
           trendColor="text-amber-500"
         />
         <StatCard 
@@ -195,9 +177,9 @@ export const StudentDashboard = () => {
         />
         <StatCard 
           title="Learning Path" 
-          value="45%" 
+          value={`${Math.min(100, Math.max(20, Math.round((analysis?.overall_score ?? 0) - ((analysis?.weaknesses?.length ?? 0) * 5))))}%`} 
           icon={TrendingUp} 
-          trend="Next milestone soon" 
+          trend={analysis ? "Next focus ready" : "Open roadmap"} 
         />
       </div>
 
@@ -233,7 +215,7 @@ export const StudentDashboard = () => {
                 </CardHeader>
                 <div className="h-[240px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={progressData}>
+                    <AreaChart data={activityData?.learningProgress ?? []}>
                       <defs>
                         <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
@@ -243,6 +225,8 @@ export const StudentDashboard = () => {
                       <Tooltip 
                         contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                       />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b", fontWeight: 700 }} />
+                      <YAxis hide domain={[0, 100]} />
                       <Area type="monotone" dataKey="score" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorScore)" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -277,7 +261,7 @@ export const StudentDashboard = () => {
                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none mb-1">Match Score</p>
                            <p className="text-4xl font-black text-emerald-500 tracking-tighter">{posting.score}%</p>
                         </div>
-                        <Button size="sm" variant="outline" className="rounded-full px-8 h-12">Details</Button>
+                        <Link to={`/postings/${posting.posting_id}`}><Button size="sm" variant="outline" className="rounded-full px-8 h-12">Details</Button></Link>
                      </div>
                    </div>
                  </Card>
@@ -300,9 +284,11 @@ export const StudentDashboard = () => {
                     <>You are missing <span className="font-black underline underline-offset-4 decoration-white/30 truncate">Advanced Excel</span> required by 18 top roles in your area.</>
                   )}
                 </p>
-                <Button className="w-full bg-white text-indigo-600 hover:bg-slate-100 border-none font-black rounded-full h-14">
-                  Start Course
-                </Button>
+                <Link to="/learning-path">
+                  <Button className="w-full bg-white text-indigo-600 hover:bg-slate-100 border-none font-black rounded-full h-14">
+                    Open Learning Path
+                  </Button>
+                </Link>
              </div>
              <div className="absolute right-[-20%] top-[-20%] w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
            </Card>
@@ -314,21 +300,9 @@ export const StudentDashboard = () => {
                 <History className="w-5 h-5 text-slate-300" />
              </CardHeader>
              <CardContent className="p-0 space-y-10">
-                <ActivityItem 
-                  text="Applied to Product Management Intern at Garanti BBVA"
-                  time="2 days ago"
-                  status="Applied"
-                />
-                <ActivityItem 
-                  text="Profile verified by ITU Education Office"
-                  time="1 week ago"
-                  status="Verified"
-                />
-                <ActivityItem 
-                  text={analysis ? `CV Analysis completed: ${analysis.extracted_skills.length} skills extracted` : "CV Analysis: 12 new technical skills extracted"}
-                  time="2 weeks ago"
-                  status="AI Insight"
-                />
+                {(activityData?.recentActivities ?? []).map((activity, idx) => (
+                  <ActivityItem key={`${activity.status}-${idx}`} text={activity.text} time={activity.time} status={activity.status} />
+                ))}
              </CardContent>
            </Card>
            {isInsightLoading && (
@@ -358,21 +332,15 @@ export const StudentDashboard = () => {
                 <Clock className="w-5 h-5 text-slate-300" />
              </CardHeader>
              <CardContent className="p-0 space-y-8">
-                <div className="flex items-center justify-between group cursor-pointer">
-                  <div className="space-y-1">
-                    <p className="text-xs font-black text-slate-900 group-hover:text-indigo-600 transition-colors">Trendyol PM Role</p>
-                    <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest">Ends in 2 days</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-200" />
-                </div>
-                <div className="flex items-center justify-between group cursor-pointer opacity-50">
-                  <div className="space-y-1">
-                    <p className="text-xs font-black text-slate-900 group-hover:text-indigo-600 transition-colors">Getir Data Analysis</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ends in 8 days</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-200" />
-                </div>
-             </CardContent>
+                {activityData?.upcomingDeadlines?.length ? activityData.upcomingDeadlines.map((deadline) => (
+                  <Link key={deadline.posting_id} to={`/postings/${deadline.posting_id}`} className="flex items-center justify-between group cursor-pointer">
+                    <div className="space-y-1">
+                      <p className="text-xs font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{deadline.title}</p>
+                      <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest">{deadline.company_name} • Ends in {deadline.ends_in_days} days</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-200" />
+                  </Link>
+                )) : <p className="text-sm text-slate-500">No upcoming deadlines.</p>}             </CardContent>
            </Card>
         </div>
       </div>
