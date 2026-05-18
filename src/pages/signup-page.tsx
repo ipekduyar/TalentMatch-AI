@@ -21,12 +21,6 @@ export const SignupPage = () => {
     lastName: '',
     email: '',
     password: '',
-    university: '',
-    department: '',
-    studentNumber: '',
-    academicYear: '',
-    gpa: '',
-    careerGoal: '',
     companyName: '',
     companyIndustry: '',
     companySize: '',
@@ -90,26 +84,12 @@ export const SignupPage = () => {
       return;
     }
 
-    const requiredStudent = [
-      form.university, form.department, form.studentNumber, form.academicYear, form.gpa, form.careerGoal,
-    ];
-    if (requiredStudent.some(v => !v.trim())) {
-      toast.error('Please fill all student fields.');
-      return;
-    }
-
     const person = await signupMockUser({
       firstName: form.firstName,
       lastName: form.lastName,
       email: form.email,
       type: 'student',
       kvkkConsent: form.kvkkConsent,
-      university: form.university,
-      department: form.department,
-      studentNumber: form.studentNumber,
-      academicYear: Number(form.academicYear) as 1 | 2 | 3 | 4 | 5,
-      gpa: Number(form.gpa),
-      careerGoal: form.careerGoal,
       password: form.password,
       termsConsent: form.termsConsent,
     });
@@ -154,22 +134,7 @@ export const SignupPage = () => {
               <Input required type="password" value={form.password} onChange={(e) => onChange('password', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Password" />
             </div>
 
-            {type === 'student' ? (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input required value={form.university} onChange={(e) => onChange('university', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="University" />
-                  <Input required value={form.department} onChange={(e) => onChange('department', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Department" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input required value={form.studentNumber} onChange={(e) => onChange('studentNumber', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Student number" />
-                  <Input required type="number" min="1" max="5" value={form.academicYear} onChange={(e) => onChange('academicYear', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Academic year (1-5)" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input required type="number" min="0" max="4" step="0.01" value={form.gpa} onChange={(e) => onChange('gpa', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="GPA" />
-                  <Input required value={form.careerGoal} onChange={(e) => onChange('careerGoal', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Career goal" />
-                </div>
-              </>
-            ) : (
+            {type === 'student' ? null : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input required value={form.companyName} onChange={(e) => onChange('companyName', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Company name" />
