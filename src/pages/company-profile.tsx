@@ -11,7 +11,7 @@ export const CompanyProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readonlyData, setReadonlyData] = useState({ representativeName: "Not provided", representativeEmail: "Not provided" });
-  const [formData, setFormData] = useState({ companyName: "", industry: "", location: "", companySize: "", website: "", description: "", representativeJobTitle: "" });
+  const [formData, setFormData] = useState({ companyName: "", industry: "", location: "", companySize: "", website: "", representativeJobTitle: "" });
 
   useEffect(() => {
     const load = async () => {
@@ -25,7 +25,6 @@ export const CompanyProfilePage = () => {
           location: context.company.location ?? "",
           companySize: context.company.size ?? "",
           website: context.company.website ?? "",
-          description: context.company.description ?? "",
           representativeJobTitle: context.representative.job_title ?? "",
         });
         setReadonlyData({
@@ -52,7 +51,6 @@ export const CompanyProfilePage = () => {
           location: formData.location,
           size: formData.companySize,
           website: formData.website,
-          description: formData.description,
         },
         representativeJobTitle: formData.representativeJobTitle,
       });
@@ -77,7 +75,7 @@ export const CompanyProfilePage = () => {
         <p><span className="font-semibold text-slate-900">Representative:</span> {readonlyData.representativeName}</p>
         <p><span className="font-semibold text-slate-900">Representative Email:</span> {readonlyData.representativeEmail}</p>
         <p><span className="font-semibold text-slate-900">Representative Job Title:</span> {fallback(formData.representativeJobTitle)}</p>
-        <p className="md:col-span-2"><span className="font-semibold text-slate-900">Description:</span> {fallback(formData.description)}</p>
+        <p className="md:col-span-2"><span className="font-semibold text-slate-900">Description:</span> Description is not stored in the current database schema.</p>
       </CardContent></Card>
 
       <Card className="bg-white rounded-xl"><CardHeader><CardTitle className="text-slate-900">Edit Profile</CardTitle></CardHeader><CardContent className="space-y-4">
@@ -87,7 +85,6 @@ export const CompanyProfilePage = () => {
         <Input value={formData.companySize} onChange={(e) => onChange("companySize", e.target.value)} placeholder="Company Size" />
         <Input value={formData.website} onChange={(e) => onChange("website", e.target.value)} placeholder="Website" />
         <Input value={formData.representativeJobTitle} onChange={(e) => onChange("representativeJobTitle", e.target.value)} placeholder="Representative Job Title" />
-        <textarea value={formData.description} onChange={(e) => onChange("description", e.target.value)} className="w-full min-h-24 rounded-md border border-slate-200 px-3 py-2" placeholder="Company Description" />
         <Button onClick={saveChanges} className="bg-blue-600 text-white hover:bg-blue-700">Save changes</Button>
       </CardContent></Card>
     </div>
