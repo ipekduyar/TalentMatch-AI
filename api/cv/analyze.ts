@@ -1,6 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import mammoth from "mammoth";
+import { execFile } from "node:child_process";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 
 type AnalysisPayload = {
   extracted_skills: string[];
@@ -173,6 +178,42 @@ const normalizeExtractedPdfText = (input: string): string =>
     .replace(/ {2,}/g, " ")
     .trim();
 
+
+const execFileAsync = promisify(execFile);
+
+const decodePdfEscapes = (value: string): string =>
+  value
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\\\/g, "\\")
+    .replace(/\\\(/g, "(")
+    .replace(/\\\)/g, ")");
+
+const extractPdfTextWithPdftotext = async (buffer: Buffer): Promise<string> => {
+  const tempPath = join(tmpdir(), `cv-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`);
+
+  await fs.writeFile(tempPath, buffer);
+  try {
+    const { stdout } = await execFileAsync("pdftotext", ["-layout", tempPath, "-"]);
+    return stdout ?? "";
+  } finally {
+    await fs.unlink(tempPath).catch(() => undefined);
+  }
+};
+
+const extractPdfTextWithRawHeuristic = async (buffer: Buffer): Promise<string> => {
+  const content = buffer.toString("latin1");
+  const matches = content.match(/\((?:\\.|[^\\)])*\)/g) ?? [];
+
+  const decoded = matches
+    .map((match) => match.slice(1, -1))
+    .map((value) => decodePdfEscapes(value))
+    .join(" ");
+
+  return decoded;
+};
+
 const extractPdfTextWithPdfJs = async (buffer: Buffer): Promise<string> => {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const loadingTask = pdfjs.getDocument({
@@ -208,12 +249,15 @@ const extractPdfTextWithPdfParse = async (buffer: Buffer): Promise<string> => {
 
 const extractPdfText = async (buffer: Buffer): Promise<string> => {
   const extractors: Array<{ name: string; run: () => Promise<string> }> = [
+    { name: "pdftotext", run: () => extractPdfTextWithPdftotext(buffer) },
     { name: "pdfjs", run: () => extractPdfTextWithPdfJs(buffer) },
     { name: "pdf-parse", run: () => extractPdfTextWithPdfParse(buffer) },
+    { name: "raw-heuristic", run: () => extractPdfTextWithRawHeuristic(buffer) },
   ];
 
   for (const extractor of extractors) {
     try {
+      console.log("Trying PDF extractor", extractor.name);
       const extractedText = await extractor.run();
       const normalizedText = normalizeExtractedPdfText(extractedText);
 
@@ -222,12 +266,16 @@ const extractPdfText = async (buffer: Buffer): Promise<string> => {
         return normalizedText;
       }
 
-      console.warn("PDF extraction returned short text", {
+      console.warn("PDF extractor returned short text", {
         method: extractor.name,
         length: normalizedText.length,
+        preview: normalizedText.slice(0, 160),
       });
     } catch (error) {
-      console.error("PDF extraction primary method failed", error);
+      console.error("PDF extractor failed", {
+        method: extractor.name,
+        error: stringifyErrorForDetection(error),
+      });
     }
   }
 
