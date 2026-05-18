@@ -160,26 +160,45 @@ const buildFallbackAnalysis = (cvText: string): AnalysisPayload => {
   };
 };
 
-const ensurePdfNodePolyfills = async (): Promise<void> => {
+const extractPdfText = async (buffer: Buffer): Promise<string> => {
   try {
-    const canvasModule = await import("@napi-rs/canvas");
-    const candidates: Array<["DOMMatrix" | "ImageData" | "Path2D", unknown]> = [
-      ["DOMMatrix", (canvasModule as { DOMMatrix?: unknown }).DOMMatrix],
-      ["ImageData", (canvasModule as { ImageData?: unknown }).ImageData],
-      ["Path2D", (canvasModule as { Path2D?: unknown }).Path2D],
-    ];
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      disableFontFace: true,
+    });
+    const pdf = await loadingTask.promise;
+    const pageTexts: string[] = [];
 
-    for (const [key, value] of candidates) {
-      if (typeof value !== "undefined" && typeof globalThis[key] === "undefined") {
-        (globalThis as Record<string, unknown>)[key] = value;
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
+        .join(" ")
+        .trim();
+
+      if (pageText) {
+        pageTexts.push(pageText);
       }
     }
 
-    if (typeof globalThis.DOMMatrix === "undefined") {
-      throw new Error("Missing DOMMatrix polyfill");
+    const extractedText = pageTexts.join("\n").trim();
+
+    if (extractedText.length < 20) {
+      throw new Error("No readable text found in this PDF. Please upload a text-based PDF or DOCX file.");
     }
-  } catch {
-    throw new Error("PDF parsing is not available on this server. Please upload a DOCX file or try again later.");
+
+    return extractedText;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("No readable text found")) {
+      throw error;
+    }
+
+    console.error("PDF extraction failed", error);
+    throw new Error("PDF text could not be extracted. Please upload a text-based PDF or DOCX file.");
   }
 };
 
@@ -187,12 +206,7 @@ const extractCvText = async (fileName: string, mimeType: string | null, buffer: 
   const lowerName = fileName.toLowerCase();
 
   if (mimeType === "application/pdf" || lowerName.endsWith(".pdf")) {
-    await ensurePdfNodePolyfills();
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: buffer });
-    const parsed = await parser.getText();
-    await parser.destroy?.();
-    return parsed.text?.trim() ?? "";
+    return extractPdfText(buffer);
   }
 
   if (
