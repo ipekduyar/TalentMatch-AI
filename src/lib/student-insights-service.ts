@@ -53,6 +53,132 @@ const SHARED_DOMAIN_RESOURCES: Resource[] = [
   R({ title: "YouTube Learning", provider: "YouTube", url: "https://www.youtube.com/", type: "Technical", level: "Beginner", cost_type: "Free", description: "Practical tutorials and walkthroughs for applied skills." }),
 ];
 
+
+const RELATED_SKILL_ALIASES: Record<string, string[]> = {
+  "HTML": ["React","JSX","Frontend","Web Development"],
+  "CSS": ["Tailwind","Tailwind CSS","Bootstrap","Styling","UI","Frontend","React"],
+  "Git": ["GitHub","GitLab","Version Control"],
+  "SQL": ["PostgreSQL","Supabase","MySQL","Database"],
+  "Database Design": ["SQL","PostgreSQL","Supabase","Database"],
+  "REST API Design": ["REST API","Node.js","Flask","Express","Backend","API"],
+  "Testing": ["Debugging","QA","Unit Testing","Jest","Test"],
+  "Deployment": ["Vercel","Netlify","Docker","Cloud","Supabase"],
+  "TypeScript": ["JavaScript","React"],
+  "Feature Engineering": ["Machine Learning","Pandas","NumPy","Data Science"],
+  "Model Evaluation": ["Machine Learning","Statistics","Regression","Classification"],
+  "Data Visualization": ["Power BI","Tableau","Dashboard","Charts","Reporting"],
+  "SQL Joins": ["SQL","Database","PostgreSQL"],
+  "Statistics": ["Regression","Probability","Data Analysis"],
+  "Experiment Tracking": ["Machine Learning","Model","Evaluation"],
+  "Process Validation": ["Process Engineering","GMP","Production","Quality Control"],
+  "GMP Documentation": ["GMP","SOP","Quality Assurance","Documentation"],
+  "Aspen Plus Simulation": ["Aspen Plus","Process Simulation","Thermodynamics","Distillation"],
+  "HPLC/FTIR Reporting": ["HPLC","FTIR","Laboratory","Quality Control","Technical Reports"],
+  "Laboratory Safety": ["Laboratory","GMP","SOP","Safety"],
+  "Statistical Quality Control": ["Quality Control","Data Analysis","Excel","Process Monitoring"],
+  "CAD Portfolio": ["CAD","SolidWorks","AutoCAD","Technical Drawing"],
+  "ANSYS/FEA": ["ANSYS","Simulation","Finite Element","CAE"],
+  "Technical Drawing": ["CAD","SolidWorks","AutoCAD","Revit","Architecture"],
+  "Manufacturing Methods": ["Manufacturing","Production","Machining"],
+  "Tolerance Analysis": ["Technical Drawing","Manufacturing","Machine Design"],
+  "Material Selection": ["Materials","Mechanical Design","Manufacturing"],
+  "PCB Design": ["Electronics","Circuit","KiCad","Altium","PCB"],
+  "Embedded C/C++": ["Embedded Systems","C","C++","Arduino","STM32","Microcontroller"],
+  "Signal Processing": ["Signals","MATLAB","DSP"],
+  "Control Systems": ["MATLAB","Simulink","Control","Automation"],
+  "Circuit Simulation": ["Circuit Analysis","LTspice","Simulation"],
+  "Power Electronics": ["Electrical Engineering","Power Systems","Electronics"],
+  "Forecasting": ["Excel","Python","Statistics","Demand Planning"],
+  "Optimization Modeling": ["Operations Research","Optimization","Linear Programming","Solver"],
+  "Lean/Six Sigma": ["Lean","Six Sigma","Process Improvement","Quality"],
+  "Production Planning": ["Production","Scheduling","Supply Chain","Inventory"],
+  "KPI Dashboard": ["KPI","Excel","Power BI","Reporting"],
+  "BIM Modeling": ["BIM","Revit","Architecture","Construction"],
+  "Revit": ["BIM","Architecture","Autodesk"],
+  "Structural Analysis": ["Structural","Civil Engineering","Static","Construction"],
+  "Site Safety": ["Construction","Site","Project Management"],
+  "Construction Planning": ["Construction Management","Project Planning"],
+  "ESG Reporting": ["ESG","Sustainability","Reporting"],
+  "Carbon Footprint Analysis": ["Carbon Footprint","Sustainability","Climate"],
+  "Water/Wastewater Treatment": ["Water Treatment","Wastewater","Environmental Engineering"],
+  "Renewable Energy Analysis": ["Renewable Energy","Solar","Wind","Energy Efficiency"],
+  "Environmental Impact Assessment": ["Environmental Impact","Sustainability","Regulation"],
+  "Regulatory Awareness": ["Quality Systems","FDA","Medical Device","Compliance"],
+  "Biomedical Devices": ["Biomedical Engineering","Medical Device","Electronics"],
+  "Clinical Research Basics": ["Clinical","Research Methods","Healthcare"],
+  "Laboratory Documentation": ["Laboratory","Documentation","Quality Systems"],
+  "Bioinformatics Basics": ["Bioinformatics","Python","Biology","Data Analysis"],
+  "Quality Systems": ["Quality","Regulatory","Documentation"],
+  "SEM/XRD Interpretation": ["SEM","XRD","Materials Characterization"],
+  "Materials Characterization": ["SEM","XRD","Testing","Materials Science"],
+  "Corrosion Analysis": ["Corrosion","Metallurgy"],
+  "Mechanical Testing": ["Mechanical Testing","Tensile Test","Materials"],
+  "Polymer/Composite Knowledge": ["Polymers","Composites","Materials"],
+  "Aerodynamics": ["Aerodynamics","Flight","Aircraft"],
+  "Flight Mechanics": ["Flight Mechanics","Aerospace","Aircraft"],
+  "CFD/ANSYS": ["CFD","ANSYS","Simulation"],
+  "MATLAB Simulation": ["MATLAB","Simulation","Modeling"],
+  "Technical Reporting": ["Technical Reports","Documentation"],
+  "ROS": ["ROS","Robotics"],
+  "Gazebo Simulation": ["Gazebo","Simulation","Robotics"],
+  "Sensor Integration": ["Sensors","Actuators","Embedded Systems"],
+  "Embedded Systems": ["Arduino","STM32","Microcontroller","C/C++"],
+  "PLC Basics": ["PLC","Automation"],
+  "KPI Definition": ["KPI","Metrics","Reporting"],
+  "Market Analysis": ["Market Research","Strategy","Business Analysis"],
+  "Roadmap Planning": ["Product Management","Roadmap","Project Management"],
+  "Stakeholder Management": ["Communication","Project Management","Team Coordination"],
+  "Agile/Scrum": ["Agile","Scrum","Project Management"],
+  "Business Case Writing": ["Business Analysis","Strategy","Presentation"],
+  "Financial Modeling": ["Excel","Finance","Financial Analysis"],
+  "Valuation": ["Finance","Investment","Financial Analysis"],
+  "Risk Analysis": ["Risk","Finance","Audit"],
+  "Power BI Reporting": ["Power BI","Reporting","Dashboard"],
+  "Budget Variance Analysis": ["Budgeting","Accounting","Excel"],
+  "Audit Documentation": ["Audit","Accounting","Reporting"],
+  "Google Analytics": ["Google Analytics","Analytics","Campaign Reporting"],
+  "SEO": ["SEO","Content","Digital Marketing"],
+  "Campaign Reporting": ["Campaign Management","Reporting","Google Analytics"],
+  "Content Strategy": ["Content","Copywriting","Brand","Social Media"],
+  "Brand Analysis": ["Brand","Market Research","Marketing"],
+  "Copywriting Portfolio": ["Copywriting","Writing","Content"],
+  "HR Analytics": ["Excel","Research Methods","Data Collection","Survey Design","Reporting"],
+  "Employee Relations": ["Communication","Organizational Psychology","Empathy","Teamwork"],
+  "Psychological Assessment Awareness": ["Psychology","Organizational Psychology","Research Methods","Interviewing"],
+  "Candidate Evaluation": ["Interviewing","Recruitment","Candidate Communication","Communication"],
+  "Training & Development": ["Training","Development","Presentation Skills","Communication"],
+  "Organizational Development": ["Organizational Psychology","Employee Engagement","Research Methods"],
+  "Onboarding Process Design": ["Human Resources","Recruitment","Employee Communication","Training and Development"],
+  "Advanced Excel / Reporting": ["Excel","Data Collection","Survey Design","Reporting","Presentation Skills"],
+  "GDPR": ["Data Protection","KVKK","Compliance","Privacy"],
+  "Legal Memo Writing": ["Legal Writing","Legal Research","Academic Writing"],
+  "Contract Risk Analysis": ["Contract Review","Corporate Law","Commercial Law"],
+  "Compliance Checklist Design": ["Compliance","Regulation","KVKK","GDPR"],
+  "Policy Brief Writing": ["Policy Analysis","Academic Writing","Research"],
+  "Client Communication": ["Client Communication","Communication","Legal Writing"],
+  "Regulatory Research": ["Legal Research","Compliance","Regulation"],
+};
+
+const normalizeSkill = (text: string) => norm(text).replace(/\s+/g, " ").trim();
+const hasExactSkill = (skill: string, extractedSkills: string[]) => {
+  const nSkill = normalizeSkill(skill);
+  return extractedSkills.map(normalizeSkill).some((ex) => ex === nSkill || includesLoose(ex, nSkill) || includesLoose(nSkill, ex));
+};
+const hasRelatedSkill = (skill: string, extractedSkills: string[]) => {
+  const aliases = RELATED_SKILL_ALIASES[skill] ?? [];
+  const extracted = extractedSkills.map(normalizeSkill);
+  let strong = false;
+  let weak = false;
+  for (const alias of aliases) {
+    const nAlias = normalizeSkill(alias);
+    for (const ex of extracted) {
+      if (ex === nAlias || includesLoose(ex, nAlias) || includesLoose(nAlias, ex)) strong = true;
+      else if (overlaps(ex, nAlias)) weak = true;
+    }
+  }
+  return { strong, weak };
+};
+
 const DOMAIN_TEMPLATES: DomainTemplate[] = [
   // Expanded deterministic templates for major departments/domains
   { domain: "Software / Computer Engineering / Web Development", keywords: ["software","computer engineering","computer science","developer","software developer","frontend","front-end","backend","back-end","full stack","full-stack","web development","react","javascript","typescript","node","node.js","express","api","rest api","database","sql","git","github","html","css","programming","coding","yazılım","bilgisayar mühendisliği","geliştirici"], requiredSkills: ["JavaScript","TypeScript","React","Node.js","REST API","SQL","Git","Testing","HTML","CSS"], refinementSkills: ["Testing","REST API Design","TypeScript","Git Workflow","Deployment","Database Design","Code Review"], roles: ["Software Developer Intern","Frontend Developer Intern","Backend Developer Intern","Full Stack Developer Intern","Web Developer Intern","QA/Test Intern"], resources: [R({ title: "freeCodeCamp Learn", provider: "freeCodeCamp", url: "https://www.freecodecamp.org/learn/", type: "Technical", level: "Beginner", cost_type: "Free", description: "Hands-on web development modules may help build practical coding skills." }), R({ title: "MDN Web Docs", provider: "MDN", url: "https://developer.mozilla.org/en-US/docs/Learn", type: "Technical", level: "Beginner", cost_type: "Free", description: "Official web platform guides can support HTML, CSS, and JavaScript learning." }), R({ title: "React Official Learn", provider: "React", url: "https://react.dev/learn", type: "Technical", level: "Intermediate", cost_type: "Free", description: "React tutorials may help strengthen frontend component development." }), R({ title: "Node.js Learn", provider: "Node.js", url: "https://nodejs.org/en/learn", type: "Technical", level: "Beginner", cost_type: "Free", description: "Node.js resources can support backend fundamentals and API work." }), R({ title: "SQLBolt", provider: "SQLBolt", url: "https://sqlbolt.com/", type: "Technical", level: "Beginner", cost_type: "Free", description: "Interactive SQL practice is useful for database fundamentals." }), R({ title: "GitHub Skills", provider: "GitHub", url: "https://skills.github.com/", type: "Technical", level: "Beginner", cost_type: "Free", description: "GitHub Skills may help improve version-control collaboration." })] },
@@ -216,36 +342,77 @@ export const generateSkillGaps = (analysis: StudentCvAnalysis | null) => {
     if (domainReasons.length) return `Improving ${skill} can strengthen your readiness for ${template.domain} roles.`;
     return `Improving ${skill} can strengthen your readiness for ${template.domain} roles.`;
   };
-  const currentLevelFor = (skill: string) => {
-    if (matchesSkill(have, skill)) return 4;
-    if (strengthNorm.some((s) => includesLoose(s, skill) || includesLoose(skill, s))) return 4;
-    const relatedExtracted = extractedSkills.some((s) => overlaps(s, skill));
-    if (relatedExtracted) return 3;
-    return skill.includes("/") ? 2 : 1;
+  const normalizeDomainGapName = (skill: string) => {
+    const n = normalizeSkill(skill);
+    if (n === "reporting") {
+      if (template.domain.includes("HR") || template.domain.includes("Psychology")) return "Advanced Excel / Reporting";
+      if (template.domain.includes("Finance") || template.domain.includes("Accounting") || template.domain.includes("Economics")) return "Power BI Reporting";
+      if (template.domain.includes("Marketing") || template.domain.includes("Media") || template.domain.includes("Communication")) return "Campaign Reporting";
+      if (template.domain.includes("Business") || template.domain.includes("Management") || template.domain.includes("Strategy")) return "KPI Dashboard";
+      if (template.domain.includes("Engineering") || template.domain.includes("Chemical") || template.domain.includes("Mechanical") || template.domain.includes("Electrical") || template.domain.includes("Civil") || template.domain.includes("Software") || template.domain.includes("Data")) return "Technical Reporting";
+    }
+    if (n === "research") {
+      if (template.domain.includes("Law") || template.domain.includes("Policy")) return "Regulatory Research";
+      if (template.domain.includes("HR") || template.domain.includes("Psychology")) return "HR Analytics";
+      if (template.domain.includes("Education")) return "Assessment Design";
+      if (template.domain.includes("Health") || template.domain.includes("Biomedical") || template.domain.includes("Public")) return "Public Health Research";
+    }
+    if (n === "presentation") {
+      if (template.domain.includes("Business") || template.domain.includes("Management") || template.domain.includes("Strategy")) return "Presentation / Stakeholder Communication";
+      if (template.domain.includes("Education")) return "Lesson Delivery";
+    }
+    return skill;
   };
-  const targetLevelFor = (idx: number) => (idx < 3 ? 5 : 4);
+  const estimateCurrentLevel = (skill: string, report: StudentCvAnalysis | null) => {
+    const extracted = safe(report?.extracted_skills);
+    const strengthsLocal = safe(report?.strengths).map(normalizeSkill);
+    const weaknessSignals = [...safe(report?.weaknesses), ...safe(report?.improvement_suggestions)].map(normalizeSkill);
+    const nSkill = normalizeSkill(skill);
+    const exact = hasExactSkill(skill, extracted);
+    const related = hasRelatedSkill(skill, extracted);
+    let level = exact ? 4 : related.strong ? 3 : related.weak ? 2 : 1;
+    if (strengthsLocal.some((s) => s.includes(nSkill) || nSkill.includes(s))) level = Math.min(4, level + 1);
+    const mentionedWeak = weaknessSignals.some((w) => w.includes(nSkill) || nSkill.includes(w));
+    if (mentionedWeak && !exact) level = Math.min(level, 2);
+    return Math.max(1, Math.min(4, level));
+  };
+  const targetLevelFor = (idx: number, skill: string) => {
+    const advancedSkill = ["Code Review","System Design","MLOps","Regulatory Research","Valuation","Optimization Modeling"].some((adv) => overlaps(skill, adv));
+    if (idx < 2 || advancedSkill) return 5;
+    return 4;
+  };
 
-  const gaps: GeneratedSkillGap[] = skillsToUse.map((skill, idx) => ({
-    skill,
-    currentLevel: currentLevelFor(skill),
-    targetLevel: targetLevelFor(idx),
-    urgency: urgencyByIndex(idx),
-    reason: reasonFor(idx, skill),
-    relatedRoles: rolePool.slice(0, 6),
-    resources: resourcePool.slice(0, 4),
-  }));
+  const gaps: GeneratedSkillGap[] = skillsToUse.map((rawSkill, idx) => {
+    const skill = normalizeDomainGapName(rawSkill);
+    const currentLevel = estimateCurrentLevel(skill, analysis);
+    const baseUrgency = urgencyByIndex(idx);
+    const urgency: SkillGapUrgency = currentLevel >= 3 && idx >= 2 && baseUrgency === "High" ? "Medium" : currentLevel >= 3 && baseUrgency === "Medium" ? "Low" : baseUrgency;
+    return {
+      skill,
+      currentLevel,
+      targetLevel: targetLevelFor(idx, skill),
+      urgency,
+      reason: reasonFor(idx, skill),
+      relatedRoles: rolePool.slice(0, 6),
+      resources: resourcePool.slice(0, 4),
+    };
+  });
 
   if (gaps.length) return gaps;
   const fallbackSkills = (refinement?.skills?.length ? refinement.skills : requiredSkills).slice(0, 6);
-  return fallbackSkills.map((skill, idx) => ({
-    skill,
-    currentLevel: 3,
-    targetLevel: targetLevelFor(idx),
-    urgency: urgencyByIndex(idx),
-    reason: reasonFor(idx, skill),
-    relatedRoles: rolePool.slice(0, 6),
-    resources: resourcePool.slice(0, 4),
-  }));
+  return fallbackSkills.map((rawSkill, idx) => {
+    const skill = normalizeDomainGapName(rawSkill);
+    const currentLevel = estimateCurrentLevel(skill, analysis);
+    return {
+      skill,
+      currentLevel,
+      targetLevel: targetLevelFor(idx, skill),
+      urgency: currentLevel >= 3 && idx >= 2 ? "Low" : urgencyByIndex(idx),
+      reason: reasonFor(idx, skill),
+      relatedRoles: rolePool.slice(0, 6),
+      resources: resourcePool.slice(0, 4),
+    };
+  });
 };
 
 export const generateLearningPath = (analysis: StudentCvAnalysis | null) => {
