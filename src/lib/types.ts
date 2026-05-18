@@ -102,8 +102,8 @@ export type PostingSkill = {
 };
 
 export type ApplicationStatus =
-  | "pending" | "reviewed" | "shortlisted"
-  | "accepted" | "rejected" | "withdrawn" | "completed";
+  | "submitted" | "reviewed" | "shortlisted"
+  | "interview" | "accepted" | "rejected";
 
 export type Application = {
   application_id: string;

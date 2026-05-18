@@ -1,6 +1,6 @@
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
-export type ApplicationStatus = "submitted" | "reviewed" | "shortlisted" | "rejected" | "accepted";
+export type ApplicationStatus = "submitted" | "reviewed" | "shortlisted" | "interview" | "rejected" | "accepted";
 
 export type DashboardData = {
   activePostings: number;
@@ -8,18 +8,19 @@ export type DashboardData = {
   shortlistedApplications: number;
   reviewedApplications: number;
   acceptedApplications: number;
-  avgMatchScore: number;
+  interviewApplications: number;
+  avgMatchScore: number | null;
   postingPerformance: Array<{
     postingId: string;
     title: string;
     applications: number;
-    avgScore: number;
+    avgScore: number | null;
   }>;
   topApplicants: Array<{
     applicationId: string;
     name: string;
     email: string;
-    score: number;
+    score: number | null;
     postingTitle: string;
     status: ApplicationStatus;
   }>;
@@ -38,7 +39,7 @@ export type ApplicantItem = {
   name: string;
   email: string;
   status: ApplicationStatus;
-  matchScore: number;
+  matchScore: number | null;
   appliedDate: string;
   coverLetter: string | null;
 };
@@ -84,7 +85,7 @@ export const getCurrentCompanyId = async (): Promise<string> => {
 
 export type CompanyApplicationStatsByPosting = Record<string, {
   count: number;
-  avgMatchScore: number;
+  avgMatchScore: number | null;
 }>;
 
 export const getCompanyApplicationStatsByPosting = async (): Promise<CompanyApplicationStatsByPosting> => {
@@ -110,7 +111,7 @@ export const getCompanyApplicationStatsByPosting = async (): Promise<CompanyAppl
 
     acc[postingId].count += 1;
 
-    if (typeof app.match_score === "number") {
+    if (typeof app.match_score === "number" && app.match_score > 0) {
       acc[postingId].scoreSum += app.match_score;
       acc[postingId].scoreCount += 1;
     }
@@ -123,7 +124,7 @@ export const getCompanyApplicationStatsByPosting = async (): Promise<CompanyAppl
       postingId,
       {
         count: value.count,
-        avgMatchScore: value.scoreCount > 0 ? Math.round(value.scoreSum / value.scoreCount) : 0,
+        avgMatchScore: value.scoreCount > 0 ? Math.round(value.scoreSum / value.scoreCount) : null,
       },
     ]),
   );
@@ -166,18 +167,19 @@ export const getCompanyDashboardData = async (): Promise<DashboardData> => {
   const shortlistedApplications = applicationRows.filter((a) => a.status === "shortlisted").length;
   const reviewedApplications = applicationRows.filter((a) => a.status === "reviewed").length;
   const acceptedApplications = applicationRows.filter((a) => a.status === "accepted").length;
+  const interviewApplications = applicationRows.filter((a) => a.status === "interview").length;
 
-  const scoredApplications = applicationRows.filter((a) => typeof a.match_score === "number");
+  const scoredApplications = applicationRows.filter((a) => typeof a.match_score === "number" && a.match_score > 0);
   const avgMatchScore = scoredApplications.length
     ? Math.round(scoredApplications.reduce((sum, app) => sum + app.match_score, 0) / scoredApplications.length)
-    : 0;
+        : null;
 
   const postingPerformance = postingRows.map((posting) => {
     const postingApplications = applicationRows.filter((app) => app.internship_posting_id === posting.internship_posting_id);
-    const postingScores = postingApplications.filter((app) => typeof app.match_score === "number");
+    const postingScores = postingApplications.filter((app) => typeof app.match_score === "number" && app.match_score > 0);
     const avgScore = postingScores.length
       ? Math.round(postingScores.reduce((sum, app) => sum + app.match_score, 0) / postingScores.length)
-      : 0;
+          : null;
 
     return {
       postingId: posting.internship_posting_id,
@@ -200,7 +202,7 @@ export const getCompanyDashboardData = async (): Promise<DashboardData> => {
         applicationId: app.application_id,
         name: [person?.first_name, person?.last_name].filter(Boolean).join(" ") || "Candidate",
         email: person?.email ?? "",
-        score: app.match_score ?? 0,
+        score: typeof app.match_score === "number" && app.match_score > 0 ? app.match_score : null,
         postingTitle: posting?.title ?? "Role",
         status: app.status as ApplicationStatus,
       };
@@ -230,6 +232,7 @@ export const getCompanyDashboardData = async (): Promise<DashboardData> => {
     shortlistedApplications,
     reviewedApplications,
     acceptedApplications,
+    interviewApplications,
     avgMatchScore,
     postingPerformance,
     topApplicants,
@@ -269,7 +272,7 @@ export const getApplicantsForPosting = async (postingId: string): Promise<Applic
       name: [person?.first_name, person?.last_name].filter(Boolean).join(" ") || "Candidate",
       email: person?.email ?? "",
       status: app.status as ApplicationStatus,
-      matchScore: app.match_score ?? 0,
+      matchScore: typeof app.match_score === "number" && app.match_score > 0 ? app.match_score : null,
       appliedDate: app.created_at,
       coverLetter: app.cover_letter,
     };
@@ -290,7 +293,7 @@ export const getPostingTitle = async (postingId: string): Promise<string> => {
 
 export const updateApplicationStatus = async (applicationId: string, status: ApplicationStatus): Promise<{ application_id: string; status: ApplicationStatus; updated_at: string | null }> => {
   const client = ensureSupabase();
-  const allowedStatuses: ApplicationStatus[] = ["submitted", "reviewed", "shortlisted", "rejected", "accepted"];
+  const allowedStatuses: ApplicationStatus[] = ["submitted", "reviewed", "shortlisted", "interview", "rejected", "accepted"];
   if (!allowedStatuses.includes(status)) {
     throw new Error("Invalid application status.");
   }

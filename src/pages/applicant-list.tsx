@@ -18,6 +18,7 @@ const statusLabel: Record<ApplicationStatus, string> = {
   submitted: "Submitted",
   reviewed: "Reviewed",
   shortlisted: "Shortlisted",
+  interview: "Interview",
   accepted: "Accepted",
   rejected: "Rejected",
 };
@@ -117,7 +118,7 @@ export const ApplicantList = () => {
                       <td className="px-6 py-4 text-sm font-semibold text-slate-400"># {index + 1}</td>
                       <td className="px-6 py-4"><div className="flex items-center space-x-3"><Avatar className="w-8 h-8 border"><AvatarFallback>{app.name.charAt(0)}</AvatarFallback></Avatar><p className="text-sm font-bold text-slate-900">{app.name}</p></div></td>
                       <td className="px-6 py-4 text-sm text-slate-700">{app.email || "-"}</td>
-                      <td className="px-6 py-4"><Badge variant="secondary">{app.matchScore}%</Badge></td>
+                      <td className="px-6 py-4"><Badge variant="secondary">{app.matchScore == null ? "--" : `${app.matchScore}%`}</Badge></td>
                       <td className="px-6 py-4 text-sm text-slate-700">{new Date(app.appliedDate).toLocaleDateString("en-US")}</td>
                       <td className="px-6 py-4"><Badge className="capitalize">{statusLabel[app.status]}</Badge></td>
                       <td className="px-6 py-4 text-sm text-slate-700 max-w-xs">{app.coverLetter?.trim() || "-"}</td>
@@ -138,6 +139,14 @@ export const ApplicantList = () => {
                             onClick={() => handleStatusUpdate(app.applicationId, "shortlisted")}
                           >
                             Shortlist
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={updatingId === app.applicationId}
+                            onClick={() => handleStatusUpdate(app.applicationId, "interview")}
+                          >
+                            Interview
                           </Button>
                           <Button
                             variant="outline"
