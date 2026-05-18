@@ -9,6 +9,15 @@ import { User, Building2, ArrowRight, ShieldCheck, Zap, Globe } from "lucide-rea
 import { cn } from "../lib/utils";
 import { toast } from "sonner";
 
+const COMPANY_SIZE_OPTIONS = [
+  "1-10 employees",
+  "11-50 employees",
+  "51-200 employees",
+  "201-500 employees",
+  "501-1000 employees",
+  "1000+ employees",
+] as const;
+
 export const SignupPage = () => {
   const [searchParams] = useSearchParams();
   const rawType = searchParams.get('type');
@@ -23,7 +32,7 @@ export const SignupPage = () => {
     password: '',
     companyName: '',
     companyIndustry: '',
-    companySize: 'sme',
+    companySize: '11-50 employees',
     companyWebsite: '',
     companyLocation: '',
     representativeJobTitle: '',
@@ -68,8 +77,8 @@ export const SignupPage = () => {
         return;
       }
 
-      const normalizedCompanySize = form.companySize.trim().toLowerCase();
-      if (!['startup', 'sme', 'enterprise'].includes(normalizedCompanySize)) {
+      const normalizedCompanySize = form.companySize.trim();
+      if (!COMPANY_SIZE_OPTIONS.includes(normalizedCompanySize as (typeof COMPANY_SIZE_OPTIONS)[number])) {
         toast.error('Please select a valid company size.');
         return;
       }
@@ -84,7 +93,7 @@ export const SignupPage = () => {
         kvkkConsent: form.kvkkConsent,
         companyName: form.companyName,
         companyIndustry: form.companyIndustry,
-        companySize: normalizedCompanySize as "startup" | "sme" | "enterprise",
+        companySize: normalizedCompanySize,
         companyWebsite: normalizedWebsite,
         companyLocation: form.companyLocation,
         representativeJobTitle: form.representativeJobTitle,
@@ -161,9 +170,9 @@ export const SignupPage = () => {
                     onChange={(e) => onChange('companySize', e.target.value)}
                     className="h-11 border border-slate-200 rounded-xl px-3 bg-white text-slate-900"
                   >
-                    <option value="startup">Startup</option>
-                    <option value="sme">SME</option>
-                    <option value="enterprise">Enterprise</option>
+                    {COMPANY_SIZE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
                   </select>
                   <Input value={form.companyWebsite} onChange={(e) => onChange('companyWebsite', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Company website (optional)" />
                 </div>
