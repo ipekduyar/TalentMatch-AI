@@ -24,9 +24,10 @@ import { cn } from "../lib/utils";
 import { Link } from "react-router-dom";
 
 const STATUS_CONFIG = {
-  pending: { label: 'Pending', icon: Clock4, color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-100' },
+  pending: { label: 'Submitted', icon: Clock4, color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-100' },
   reviewed: { label: 'Reviewed', icon: Search, color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-100' },
   shortlisted: { label: 'Shortlisted', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-100' },
+  interview: { label: 'Interview', icon: MessageSquare, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
   accepted: { label: 'Accepted', icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50', border: 'border-emerald-100' },
   rejected: { label: 'Rejected', icon: XCircle, color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-100' },
   withdrawn: { label: 'Withdrawn', icon: XCircle, color: 'text-slate-400', bg: 'bg-slate-50', border: 'border-slate-100' },
@@ -85,7 +86,7 @@ export const MyApplicationsPage = () => {
           <p className="text-slate-500 font-medium mt-2">Track and manage your internship journey.</p>
         </div>
         <div className="flex items-center space-x-2 bg-white p-1 rounded-full border border-slate-200 shadow-sm overflow-x-auto no-scrollbar">
-          {['all', 'pending', 'reviewed', 'shortlisted', 'accepted', 'rejected'].map((s) => (
+          {['all', 'pending', 'reviewed', 'shortlisted', 'interview', 'accepted', 'rejected'].map((s) => (
             <button
               key={s}
               onClick={() => setFilter(s)}
@@ -160,7 +161,7 @@ export const MyApplicationsPage = () => {
                       <div className="flex items-center gap-8">
                          <div className="text-right">
                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">Match</p>
-                           <p className="text-3xl font-black text-emerald-500 tracking-tighter">{app.match_score == null ? '--' : `${app.match_score}%`}</p>
+                           <p className="text-3xl font-black text-emerald-500 tracking-tighter">{app.match_score == null || app.match_score === 0 ? '--' : `${app.match_score}%`}</p>
                          </div>
                          <Button size="sm" variant="outline" className="rounded-full px-5 hidden md:flex border-slate-200">
                            Details
@@ -192,6 +193,7 @@ export const MyApplicationsPage = () => {
                     pending: 'Applied',
                     reviewed: 'Reviewed',
                     shortlisted: 'Shortlisted',
+                    interview: 'Interview',
                     accepted: 'Final Result',
                     rejected: 'Final Result',
                   };

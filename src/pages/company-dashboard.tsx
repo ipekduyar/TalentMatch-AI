@@ -3,7 +3,7 @@ import { useCurrentUser } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Briefcase, MessageSquare, Plus, TrendingUp, Users } from "lucide-react";
+import { Briefcase, CalendarCheck2, Plus, TrendingUp, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ApplicationStatus, DashboardData, getCompanyDashboardData } from "@/lib/company-applications-service";
 
@@ -11,6 +11,7 @@ const statusLabel: Record<ApplicationStatus, string> = {
   submitted: "Submitted",
   reviewed: "Reviewed",
   shortlisted: "Shortlisted",
+  interview: "Interview",
   accepted: "Accepted",
   rejected: "Rejected",
 };
@@ -84,7 +85,7 @@ export const CompanyDashboard = () => {
         <Card><CardContent className="flex items-center justify-between p-6"><div><p className="text-sm text-slate-500">Active Postings</p><p className="text-2xl font-bold text-slate-900">{data?.activePostings ?? 0}</p></div><Briefcase className="h-5 w-5 text-slate-400" /></CardContent></Card>
         <Card><CardContent className="flex items-center justify-between p-6"><div><p className="text-sm text-slate-500">Total Applications</p><p className="text-2xl font-bold text-slate-900">{data?.totalApplications ?? 0}</p></div><Users className="h-5 w-5 text-slate-400" /></CardContent></Card>
         <Card><CardContent className="flex items-center justify-between p-6"><div><p className="text-sm text-slate-500">Shortlisted</p><p className="text-2xl font-bold text-slate-900">{data?.shortlistedApplications ?? 0}</p></div><TrendingUp className="h-5 w-5 text-slate-400" /></CardContent></Card>
-        <Card><CardContent className="flex items-center justify-between p-6"><div><p className="text-sm text-slate-500">Reviewed</p><p className="text-2xl font-bold text-slate-900">{data?.reviewedApplications ?? 0}</p></div><MessageSquare className="h-5 w-5 text-slate-400" /></CardContent></Card>
+        <Card><CardContent className="flex items-center justify-between p-6"><div><p className="text-sm text-slate-500">Interviews Scheduled</p><p className="text-2xl font-bold text-slate-900">{data?.interviewApplications ?? 0}</p></div><CalendarCheck2 className="h-5 w-5 text-slate-400" /></CardContent></Card>
       </section>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -96,7 +97,7 @@ export const CompanyDashboard = () => {
                 <p className="font-medium text-slate-900">{entry.title}</p>
                 <div className="mt-2 flex items-center justify-between text-sm text-slate-600">
                   <span>{entry.applications} applicants</span>
-                  <span>Avg match {entry.avgScore}%</span>
+                  <span>Avg match {entry.avgScore == null ? "--" : `${entry.avgScore}%`}</span>
                 </div>
               </div>
             ))}
@@ -113,7 +114,7 @@ export const CompanyDashboard = () => {
                   <p className="text-sm text-slate-600">{candidate.postingTitle}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant="secondary">{candidate.score}%</Badge>
+                  <Badge variant="secondary">{candidate.score == null ? "--" : `${candidate.score}%`}</Badge>
                   <Badge>{statusLabel[candidate.status]}</Badge>
                 </div>
               </div>
@@ -126,7 +127,7 @@ export const CompanyDashboard = () => {
         <Card>
           <CardHeader><CardTitle>Average Match Score</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-slate-900">{data?.avgMatchScore ?? 0}%</p>
+            <p className="text-3xl font-bold text-slate-900">{data?.avgMatchScore == null ? "--" : `${data.avgMatchScore}%`}</p>
             <p className="mt-1 text-sm text-slate-600">Across all scored applications</p>
           </CardContent>
         </Card>

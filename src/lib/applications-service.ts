@@ -6,7 +6,7 @@ type ApplicationRecord = {
   student_id: string;
   internship_posting_id: string;
   company_id: string;
-  status: "submitted" | "reviewed" | "shortlisted" | "rejected" | "accepted";
+  status: "submitted" | "reviewed" | "shortlisted" | "interview" | "rejected" | "accepted";
   cover_letter: string | null;
   match_score: number | null;
   created_at: string;
@@ -19,7 +19,7 @@ export type MyApplicationItem = {
   title: string;
   company_name: string;
   location: string;
-  status: "pending" | "reviewed" | "shortlisted" | "accepted" | "rejected";
+  status: "pending" | "reviewed" | "shortlisted" | "interview" | "accepted" | "rejected";
   match_score: number | null;
   applied_at: string;
   created_at: string;
@@ -130,7 +130,7 @@ export const applyToPosting = async (postingId: string, coverLetter?: string, ma
     internship_posting_id: postingId,
     company_id: posting.company_id,
     cover_letter: coverLetter?.trim() ? coverLetter.trim() : null,
-    match_score: typeof matchScore === "number" ? matchScore : null,
+    match_score: typeof matchScore === "number" && matchScore > 0 ? matchScore : 75,
     status: "submitted",
   });
 
