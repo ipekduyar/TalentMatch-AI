@@ -9,7 +9,17 @@ declare
   created_person_id uuid;
   resolved_company_id uuid;
   trimmed_company_name text := nullif(trim(coalesce(user_metadata ->> 'company_name', '')), '');
+  fallback_company_name text := nullif(split_part(coalesce(new.email, ''), '@', 1), '');
+  resolved_company_name text;
+  normalized_company_size_text text := lower(trim(coalesce(user_metadata ->> 'company_size', '')));
+  safe_company_size company_size := 'sme'::company_size;
 begin
+  if normalized_company_size_text in ('startup', 'sme', 'enterprise') then
+    safe_company_size := normalized_company_size_text::company_size;
+  end if;
+
+  resolved_company_name := coalesce(trimmed_company_name, fallback_company_name);
+
   insert into public.persons (
     auth_user_id,
     email,
@@ -62,7 +72,7 @@ begin
     )
     on conflict (person_id) do nothing;
   elsif coalesce(user_metadata ->> 'role', '') = 'company_rep' then
-    if trimmed_company_name is not null then
+    if resolved_company_name is not null then
       insert into public.companies (
         name,
         industry,
@@ -71,9 +81,9 @@ begin
         location
       )
       values (
-        trimmed_company_name,
+        resolved_company_name,
         nullif(user_metadata ->> 'company_industry', ''),
-        coalesce(nullif(user_metadata ->> 'company_size', ''), 'sme')::company_size,
+        safe_company_size,
         nullif(user_metadata ->> 'company_website', ''),
         nullif(user_metadata ->> 'company_location', '')
       )

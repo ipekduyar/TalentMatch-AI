@@ -23,7 +23,7 @@ export const SignupPage = () => {
     password: '',
     companyName: '',
     companyIndustry: '',
-    companySize: '',
+    companySize: 'sme',
     companyWebsite: '',
     companyLocation: '',
     representativeJobTitle: '',
@@ -37,6 +37,12 @@ export const SignupPage = () => {
   const formatErrorMessage = (error: unknown) => {
     if (error instanceof Error && error.message) return error.message;
     try { return JSON.stringify(error); } catch { return String(error); }
+  };
+  const normalizeWebsite = (website: string) => {
+    const trimmed = website.trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
   };
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -55,12 +61,20 @@ export const SignupPage = () => {
 
     if (type === 'company') {
       const requiredCompany = [
-        form.companyName, form.companyIndustry, form.companySize, form.companyWebsite, form.companyLocation, form.representativeJobTitle,
+        form.companyName, form.companyIndustry, form.companySize, form.companyLocation,
       ];
       if (requiredCompany.some(v => !v.trim())) {
-        toast.error('Please fill all company representative fields.');
+        toast.error('Please fill all required company fields.');
         return;
       }
+
+      const normalizedCompanySize = form.companySize.trim().toLowerCase();
+      if (!['startup', 'sme', 'enterprise'].includes(normalizedCompanySize)) {
+        toast.error('Please select a valid company size.');
+        return;
+      }
+
+      const normalizedWebsite = normalizeWebsite(form.companyWebsite);
 
       const person = await signupMockUser({
         firstName: form.firstName,
@@ -70,8 +84,8 @@ export const SignupPage = () => {
         kvkkConsent: form.kvkkConsent,
         companyName: form.companyName,
         companyIndustry: form.companyIndustry,
-        companySize: (form.companySize as "startup" | "sme" | "enterprise") || 'sme',
-        companyWebsite: form.companyWebsite,
+        companySize: normalizedCompanySize as "startup" | "sme" | "enterprise",
+        companyWebsite: normalizedWebsite,
         companyLocation: form.companyLocation,
         representativeJobTitle: form.representativeJobTitle,
         password: form.password,
@@ -141,12 +155,21 @@ export const SignupPage = () => {
                   <Input required value={form.companyIndustry} onChange={(e) => onChange('companyIndustry', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Company industry" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input required value={form.companySize} onChange={(e) => onChange('companySize', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Company size (startup/sme/enterprise)" />
-                  <Input required type="url" value={form.companyWebsite} onChange={(e) => onChange('companyWebsite', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Company website" />
+                  <select
+                    required
+                    value={form.companySize}
+                    onChange={(e) => onChange('companySize', e.target.value)}
+                    className="h-11 border border-slate-200 rounded-xl px-3 bg-white text-slate-900"
+                  >
+                    <option value="startup">Startup</option>
+                    <option value="sme">SME</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                  <Input value={form.companyWebsite} onChange={(e) => onChange('companyWebsite', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Company website (optional)" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input required value={form.companyLocation} onChange={(e) => onChange('companyLocation', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Company location" />
-                  <Input required value={form.representativeJobTitle} onChange={(e) => onChange('representativeJobTitle', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Representative job title" />
+                  <Input value={form.representativeJobTitle} onChange={(e) => onChange('representativeJobTitle', e.target.value)} className="h-11 border-slate-200 rounded-xl" placeholder="Representative job title (optional)" />
                 </div>
               </>
             )}
