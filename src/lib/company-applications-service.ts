@@ -42,6 +42,12 @@ export type ApplicantItem = {
   matchScore: number | null;
   appliedDate: string;
   coverLetter: string | null;
+  cvDocumentId: string | null;
+  cvFileName: string | null;
+  cvFilePath: string | null;
+  cvStoragePath: string | null;
+  cvUrl: string | null;
+  cvAvailable: boolean;
 };
 
 const ensureSupabase = () => {
@@ -262,7 +268,7 @@ export const getApplicantsForPosting = async (postingId: string): Promise<Applic
 
   if (error) throw new Error(error.message || "Could not load applicants.");
 
-  return ((data ?? []) as any[]).map((app) => {
+  const applicants = ((data ?? []) as any[]).map((app) => {
     const student = Array.isArray(app.students) ? app.students[0] : app.students;
     const person = Array.isArray(student?.persons) ? student.persons[0] : student?.persons;
 
@@ -275,6 +281,85 @@ export const getApplicantsForPosting = async (postingId: string): Promise<Applic
       matchScore: typeof app.match_score === "number" && app.match_score > 0 ? app.match_score : null,
       appliedDate: app.created_at,
       coverLetter: app.cover_letter,
+      cvDocumentId: null,
+      cvFileName: null,
+      cvFilePath: null,
+      cvStoragePath: null,
+      cvUrl: null,
+      cvAvailable: false,
+    };
+  });
+
+  const studentIds = applicants.map((app) => app.studentId).filter(Boolean);
+  if (!studentIds.length) return applicants;
+
+  const { data: documents, error: documentsError } = await client
+    .from("student_documents")
+    .select("document_id, student_id, file_name, file_path, storage_path, file_url, mime_type, created_at, upload_status")
+    .in("student_id", studentIds)
+    .order("created_at", { ascending: false });
+
+  if (documentsError) {
+    throw new Error(documentsError.message || "Could not load CV documents for applicants.");
+  }
+
+  const latestDocumentByStudentId = new Map<string, any>();
+  for (const doc of documents ?? []) {
+    if (!latestDocumentByStudentId.has(doc.student_id)) {
+      latestDocumentByStudentId.set(doc.student_id, doc);
+    }
+  }
+
+  const pathCandidates = new Set<string>();
+  const applicantsWithDocument = applicants.map((app) => {
+    const doc = latestDocumentByStudentId.get(app.studentId);
+    if (!doc || doc.upload_status !== "uploaded") {
+      return app;
+    }
+
+    const cvFilePath = typeof doc.file_path === "string" ? doc.file_path : null;
+    const cvStoragePath = typeof doc.storage_path === "string" ? doc.storage_path : null;
+    const pathToSign = cvStoragePath ?? cvFilePath;
+    if (pathToSign) {
+      pathCandidates.add(pathToSign);
+    }
+
+    return {
+      ...app,
+      cvDocumentId: doc.document_id ?? null,
+      cvFileName: doc.file_name ?? null,
+      cvFilePath,
+      cvStoragePath,
+      cvUrl: typeof doc.file_url === "string" ? doc.file_url : null,
+      cvAvailable: Boolean(doc.file_url || pathToSign),
+    };
+  });
+
+  const signedUrlByPath = new Map<string, string>();
+  if (pathCandidates.size > 0) {
+    for (const path of pathCandidates) {
+      const { data: signedData, error: signedError } = await client.storage
+        .from("student-cvs")
+        .createSignedUrl(path, 60 * 60);
+
+      if (signedError || !signedData?.signedUrl) {
+        console.error("Failed to create signed CV URL", { path, error: signedError });
+        continue;
+      }
+
+      signedUrlByPath.set(path, signedData.signedUrl);
+    }
+  }
+
+  return applicantsWithDocument.map((app) => {
+    if (app.cvUrl) return app;
+
+    const candidatePath = app.cvStoragePath ?? app.cvFilePath;
+    const signedUrl = candidatePath ? signedUrlByPath.get(candidatePath) ?? null : null;
+    return {
+      ...app,
+      cvUrl: signedUrl,
+      cvAvailable: Boolean(signedUrl),
     };
   });
 };

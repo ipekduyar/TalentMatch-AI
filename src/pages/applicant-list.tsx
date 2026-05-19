@@ -30,6 +30,7 @@ export const ApplicantList = () => {
   const [postingTitle, setPostingTitle] = useState("Posting");
   const [applications, setApplications] = useState<ApplicantItem[]>([]);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [openingCvId, setOpeningCvId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -50,22 +51,43 @@ export const ApplicantList = () => {
     loadData();
   }, [loadData]);
 
+  const openCvForApplicant = async (app: ApplicantItem): Promise<boolean> => {
+    if (!app.cvAvailable || !app.cvUrl) {
+      toast.error("CV could not be opened.");
+      return false;
+    }
+
+    setOpeningCvId(app.applicationId);
+    try {
+      window.open(app.cvUrl, "_blank", "noopener,noreferrer");
+      return true;
+    } catch (_err) {
+      toast.error("CV could not be opened.");
+      return false;
+    } finally {
+      setOpeningCvId(null);
+    }
+  };
+
   const handleStatusUpdate = async (applicationId: string, status: ApplicationStatus) => {
+    const currentApplicant = applications.find((app) => app.applicationId === applicationId);
+
     try {
       setUpdatingId(applicationId);
-      const updated = await updateApplicationStatus(applicationId, status);
-      setApplications((prev) =>
-        prev.map((app) =>
-          app.applicationId === applicationId
-            ? {
-                ...app,
-                status: updated.status,
-              }
-            : app,
-        ),
-      );
-      toast.success("Application status updated.");
+      await updateApplicationStatus(applicationId, status);
       await loadData();
+
+      if (status === "reviewed") {
+        if (currentApplicant?.cvAvailable && currentApplicant.cvUrl) {
+          await openCvForApplicant(currentApplicant);
+          toast.success("Application marked as reviewed.");
+        } else {
+          toast.success("Application marked as reviewed. No CV file is available.");
+        }
+        return;
+      }
+
+      toast.success("Application status updated.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update status.";
       setError(message);
@@ -108,6 +130,7 @@ export const ApplicantList = () => {
                     <th className="px-6 py-4">Match Score</th>
                     <th className="px-6 py-4">Applied</th>
                     <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">CV</th>
                     <th className="px-6 py-4">Cover Letter</th>
                     <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
@@ -121,6 +144,19 @@ export const ApplicantList = () => {
                       <td className="px-6 py-4"><Badge variant="secondary">{app.matchScore == null ? "--" : `${app.matchScore}%`}</Badge></td>
                       <td className="px-6 py-4 text-sm text-slate-700">{new Date(app.appliedDate).toLocaleDateString("en-US")}</td>
                       <td className="px-6 py-4"><Badge className="capitalize">{statusLabel[app.status]}</Badge></td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-2">
+                          <p className="text-sm text-slate-700">{app.cvFileName || "No CV uploaded"}</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!app.cvAvailable || openingCvId === app.applicationId}
+                            onClick={() => openCvForApplicant(app)}
+                          >
+                            {openingCvId === app.applicationId ? "Opening..." : "View CV"}
+                          </Button>
+                        </div>
+                      </td>
                       <td className="px-6 py-4 text-sm text-slate-700 max-w-xs">{app.coverLetter?.trim() || "-"}</td>
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap justify-end gap-2">
