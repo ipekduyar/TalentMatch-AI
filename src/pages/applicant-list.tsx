@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import {
   getPostingTitle,
   updateApplicationStatus,
 } from "@/lib/company-applications-service";
+import { getOrCreateConversationForApplication } from "@/lib/messages-service";
 import { toast } from "sonner";
 
 const statusLabel: Record<ApplicationStatus, string> = {
@@ -25,6 +26,7 @@ const statusLabel: Record<ApplicationStatus, string> = {
 
 export const ApplicantList = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [postingTitle, setPostingTitle] = useState("Posting");
@@ -102,6 +104,21 @@ export const ApplicantList = () => {
     }
   };
 
+  const handleMessageApplicant = async (applicationId: string) => {
+    try {
+      setUpdatingId(applicationId);
+      const conversationId = await getOrCreateConversationForApplication(applicationId);
+      toast.success("Conversation ready.");
+      navigate(`/company/messages?conversation=${encodeURIComponent(conversationId)}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not start conversation.";
+      toast.error(message);
+      setError(message);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const sortedApplications = useMemo(
     () => applications.slice().sort((a, b) => b.matchScore - a.matchScore),
     [applications],
@@ -165,6 +182,14 @@ export const ApplicantList = () => {
                       <td className="px-6 py-4 text-sm text-slate-700 max-w-xs">{app.coverLetter?.trim() || "-"}</td>
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={updatingId === app.applicationId}
+                            onClick={() => handleMessageApplicant(app.applicationId)}
+                          >
+                            Message
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"

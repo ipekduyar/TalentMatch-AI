@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,8 @@ import {
 } from "@/lib/messages-service";
 
 export const MessagesPage = () => {
+  const [searchParams] = useSearchParams();
+  const requestedConversationId = searchParams.get("conversation");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<"student" | "company_rep" | "admin" | null>(null);
@@ -41,7 +44,12 @@ export const MessagesPage = () => {
         ? await getCompanyConversations()
         : await getStudentConversations();
       setConversations(list);
-      setSelectedConversationId((current) => current ?? list[0]?.conversationId ?? null);
+      setSelectedConversationId((current) => {
+        if (requestedConversationId && list.some((item) => item.conversationId === requestedConversationId)) {
+          return requestedConversationId;
+        }
+        return current ?? list[0]?.conversationId ?? null;
+      });
     } catch (err: any) {
       setError(err?.message || "Could not load conversations.");
     } finally {
@@ -61,7 +69,7 @@ export const MessagesPage = () => {
 
   useEffect(() => {
     void loadConversations();
-  }, []);
+  }, [requestedConversationId]);
 
   useEffect(() => {
     if (!selectedConversationId) {

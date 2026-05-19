@@ -229,14 +229,13 @@ export async function sendMessage(conversationId: string, body: string): Promise
 
 export async function getOrCreateConversationForApplication(applicationId: string): Promise<string> {
   const client = ensureClient();
+  const ctx = await getCurrentPersonContext();
 
-  const { data: existing, error: existingError } = await client
-    .from("conversations")
-    .select("conversation_id")
-    .eq("application_id", applicationId)
-    .maybeSingle();
-  if (existingError) throw new Error(existingError.message || "Could not load conversation.");
-  if (existing?.conversation_id) return existing.conversation_id;
+  if (ctx.role !== "company_rep" || !ctx.companyId) {
+    throw new Error("Only company representatives can start applicant conversations.");
+  }
+
+  const companyId = ctx.companyId;
 
   const { data: app, error: appError } = await client
     .from("applications")
@@ -245,6 +244,15 @@ export async function getOrCreateConversationForApplication(applicationId: strin
     .maybeSingle();
   if (appError) throw new Error(appError.message || "Could not load application.");
   if (!app) throw new Error("Application not found.");
+  if (app.company_id !== companyId) throw new Error("You do not have access to this application.");
+
+  const { data: existing, error: existingError } = await client
+    .from("conversations")
+    .select("conversation_id")
+    .eq("application_id", applicationId)
+    .maybeSingle();
+  if (existingError) throw new Error(existingError.message || "Could not load conversation.");
+  if (existing?.conversation_id) return existing.conversation_id;
 
   const { data: created, error: createError } = await client
     .from("conversations")
