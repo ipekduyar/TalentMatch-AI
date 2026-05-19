@@ -52,8 +52,13 @@ export const ApplicantList = () => {
   }, [loadData]);
 
   const openCvForApplicant = async (app: ApplicantItem): Promise<boolean> => {
-    if (!app.cvAvailable || !app.cvUrl) {
-      toast.error("CV could not be opened.");
+    if (!app.cvAvailable) {
+      toast.error("No CV file is available.");
+      return false;
+    }
+
+    if (app.cvAvailable && !app.cvUrl) {
+      toast.error("CV link could not be generated. Please check storage permissions/path.");
       return false;
     }
 
