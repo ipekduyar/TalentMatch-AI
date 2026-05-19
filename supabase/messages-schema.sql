@@ -1,8 +1,31 @@
 -- Run this file in Supabase SQL Editor.
 
+-- A) Extensions
 create extension if not exists pgcrypto;
 
+-- B) Create conversations table
+create table if not exists public.conversations (
+  conversation_id uuid primary key default gen_random_uuid(),
+  application_id uuid references public.applications(application_id) on delete cascade,
+  student_id uuid references public.students(student_id) on delete cascade,
+  company_id uuid references public.companies(company_id) on delete cascade,
+  updated_at timestamptz not null default now()
+);
+
+-- C) Create messages table
+create table if not exists public.messages (
+  message_id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations(conversation_id) on delete cascade,
+  sender_person_id uuid not null references public.persons(person_id) on delete cascade,
+  content text,
+  sent_at timestamptz,
+  body text,
+  created_at timestamptz not null default now()
+);
+
+-- D) Alter tables and add missing columns/defaults safely
 alter table if exists public.conversations
+  add column if not exists application_id uuid references public.applications(application_id) on delete cascade,
   add column if not exists student_id uuid references public.students(student_id) on delete cascade,
   add column if not exists company_id uuid references public.companies(company_id) on delete cascade,
   add column if not exists updated_at timestamptz not null default now();
@@ -13,53 +36,36 @@ alter table if exists public.conversations
 alter table if exists public.conversations
   alter column application_id drop not null;
 
-do $$
-begin
-  if exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'applications' and column_name = 'company_id'
-  ) then
-    update public.conversations c
-    set student_id = a.student_id,
-        company_id = a.company_id
-    from public.applications a
-    where c.application_id = a.application_id
-      and (c.student_id is null or c.company_id is null);
-  end if;
-end $$;
-
-alter table public.conversations
-  alter column student_id set not null,
-  alter column company_id set not null;
-
 alter table if exists public.conversations
   drop constraint if exists conversations_application_id_key;
 
 alter table if exists public.conversations
   add constraint conversations_student_company_application_key unique (student_id, company_id, application_id);
 
-create index if not exists idx_conversations_student_id on public.conversations(student_id);
-create index if not exists idx_conversations_company_id on public.conversations(company_id);
-create index if not exists idx_conversations_application_id on public.conversations(application_id);
-
 alter table if exists public.messages
   add column if not exists body text,
   add column if not exists created_at timestamptz not null default now();
 
-update public.messages
-set body = coalesce(body, content),
-    created_at = coalesce(created_at, sent_at)
-where body is null or created_at is null;
+alter table if exists public.messages
+  alter column message_id set default gen_random_uuid();
 
-alter table public.messages alter column body set not null;
-alter table public.messages alter column message_id set default gen_random_uuid();
-
+-- E) Indexes
+create index if not exists idx_conversations_student_id on public.conversations(student_id);
+create index if not exists idx_conversations_company_id on public.conversations(company_id);
+create index if not exists idx_conversations_application_id on public.conversations(application_id);
 create index if not exists idx_messages_conversation_created on public.messages(conversation_id, created_at);
 
+-- F) Enable RLS
 alter table public.conversations enable row level security;
 alter table public.messages enable row level security;
 
+-- G) Drop policies if they already exist
 drop policy if exists conversations_select_for_participants on public.conversations;
+drop policy if exists conversations_insert_for_participants on public.conversations;
+drop policy if exists messages_select_for_conversation_participants on public.messages;
+drop policy if exists messages_insert_for_sender on public.messages;
+
+-- H) Create policies
 create policy conversations_select_for_participants on public.conversations
 for select using (
   exists (
@@ -74,7 +80,6 @@ for select using (
   )
 );
 
-drop policy if exists conversations_insert_for_participants on public.conversations;
 create policy conversations_insert_for_participants on public.conversations
 for insert with check (
   exists (
@@ -89,7 +94,6 @@ for insert with check (
   )
 );
 
-drop policy if exists messages_select_for_conversation_participants on public.messages;
 create policy messages_select_for_conversation_participants on public.messages
 for select using (
   exists (
@@ -110,7 +114,6 @@ for select using (
   )
 );
 
-drop policy if exists messages_insert_for_sender on public.messages;
 create policy messages_insert_for_sender on public.messages
 for insert with check (
   exists (
@@ -135,3 +138,26 @@ for insert with check (
       )
   )
 );
+
+-- I) Optional data backfill/update blocks
+
+do $$
+begin
+  if to_regclass('public.conversations') is not null
+     and exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'applications' and column_name = 'company_id'
+     ) then
+    update public.conversations c
+    set student_id = a.student_id,
+        company_id = a.company_id
+    from public.applications a
+    where c.application_id = a.application_id
+      and (c.student_id is null or c.company_id is null);
+  end if;
+end $$;
+
+update public.messages
+set body = coalesce(body, content),
+    created_at = coalesce(created_at, sent_at)
+where body is null or created_at is null;
