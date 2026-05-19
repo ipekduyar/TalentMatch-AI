@@ -59,7 +59,8 @@ create index if not exists idx_messages_conversation_created on public.messages(
 alter table public.conversations enable row level security;
 alter table public.messages enable row level security;
 
-create policy if not exists conversations_select_for_participants on public.conversations
+drop policy if exists conversations_select_for_participants on public.conversations;
+create policy conversations_select_for_participants on public.conversations
 for select using (
   exists (
     select 1 from public.persons p
@@ -73,7 +74,8 @@ for select using (
   )
 );
 
-create policy if not exists conversations_insert_for_participants on public.conversations
+drop policy if exists conversations_insert_for_participants on public.conversations;
+create policy conversations_insert_for_participants on public.conversations
 for insert with check (
   exists (
     select 1 from public.persons p
@@ -87,7 +89,8 @@ for insert with check (
   )
 );
 
-create policy if not exists messages_select_for_conversation_participants on public.messages
+drop policy if exists messages_select_for_conversation_participants on public.messages;
+create policy messages_select_for_conversation_participants on public.messages
 for select using (
   exists (
     select 1 from public.conversations c
@@ -107,7 +110,8 @@ for select using (
   )
 );
 
-create policy if not exists messages_insert_for_sender on public.messages
+drop policy if exists messages_insert_for_sender on public.messages;
+create policy messages_insert_for_sender on public.messages
 for insert with check (
   exists (
     select 1 from public.persons p
