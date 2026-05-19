@@ -247,6 +247,7 @@ export const getCompanyDashboardData = async (): Promise<DashboardData> => {
 
 export const getApplicantsForPosting = async (postingId: string): Promise<ApplicantItem[]> => {
   const client = ensureSupabase();
+  const CV_BUCKET = "student-cvs";
 
   const { data, error } = await client
     .from("applications")
@@ -302,65 +303,42 @@ export const getApplicantsForPosting = async (postingId: string): Promise<Applic
     return applicants;
   }
 
-  const latestDocumentByStudentId = new Map<string, any>();
+  const documentsByStudentId = new Map<string, any[]>();
   for (const doc of documents ?? []) {
-    const existingDoc = latestDocumentByStudentId.get(doc.student_id);
-    if (!existingDoc) {
-      latestDocumentByStudentId.set(doc.student_id, doc);
-      continue;
-    }
-
-    if (existingDoc.upload_status !== "analyzed" && doc.upload_status === "analyzed") {
-      latestDocumentByStudentId.set(doc.student_id, doc);
-    }
+    if (!doc?.student_id || !doc?.file_path) continue;
+    const list = documentsByStudentId.get(doc.student_id) ?? [];
+    list.push(doc);
+    documentsByStudentId.set(doc.student_id, list);
   }
 
-  const pathCandidates = new Set<string>();
-  const applicantsWithDocument = applicants.map((app) => {
-    const doc = latestDocumentByStudentId.get(app.studentId);
-    if (!doc) {
-      return app;
-    }
+  return Promise.all(applicants.map(async (app) => {
+    const studentDocuments = documentsByStudentId.get(app.studentId) ?? [];
+    const analyzedDocument = studentDocuments.find((doc) => doc.upload_status === "analyzed");
+    const doc = analyzedDocument ?? studentDocuments[0];
 
-    const cvFilePath = typeof doc.file_path === "string" ? doc.file_path : null;
-    if (cvFilePath) {
-      pathCandidates.add(cvFilePath);
+    if (!doc) return app;
+
+    const { data: signedData, error: signedError } = await client.storage
+      .from(CV_BUCKET)
+      .createSignedUrl(doc.file_path, 60 * 60);
+
+    if (signedError || !signedData?.signedUrl) {
+      console.warn("Failed to create CV signed URL", {
+        bucket: CV_BUCKET,
+        filePath: doc.file_path,
+        error: signedError?.message,
+      });
     }
 
     return {
       ...app,
-      cvDocumentId: doc.document_id ?? null,
-      cvFileName: doc.file_name ?? null,
-      cvFilePath,
-      cvUrl: null,
-      cvAvailable: Boolean(cvFilePath),
+      cvDocumentId: doc.document_id,
+      cvFileName: doc.file_name,
+      cvFilePath: doc.file_path,
+      cvUrl: signedData?.signedUrl ?? null,
+      cvAvailable: Boolean(doc.file_path),
     };
-  });
-
-  const signedUrlByPath = new Map<string, string>();
-  if (pathCandidates.size > 0) {
-    for (const path of pathCandidates) {
-      const { data: signedData, error: signedError } = await client.storage
-        .from("student-cvs")
-        .createSignedUrl(path, 60 * 60);
-
-      if (signedError || !signedData?.signedUrl) {
-        console.warn("Failed to create signed CV URL", { path, error: signedError });
-        continue;
-      }
-
-      signedUrlByPath.set(path, signedData.signedUrl);
-    }
-  }
-
-  return applicantsWithDocument.map((app) => {
-    const signedUrl = app.cvFilePath ? signedUrlByPath.get(app.cvFilePath) ?? null : null;
-    return {
-      ...app,
-      cvUrl: signedUrl,
-      cvAvailable: Boolean(signedUrl || app.cvFilePath),
-    };
-  });
+  }));
 };
 
 export const getPostingTitle = async (postingId: string): Promise<string> => {
