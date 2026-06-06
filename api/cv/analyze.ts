@@ -7,16 +7,53 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+type SkillGapPriority = "High" | "Medium" | "Low";
+
+type SkillGap = {
+  skill: string;
+  current_level: number;
+  target_level: number;
+  priority: SkillGapPriority;
+  reason: string;
+};
+
+type LearningRecommendation = {
+  title: string;
+  provider: string;
+  url: string;
+  reason: string;
+};
+
 type AnalysisPayload = {
+  detected_domain?: string;
   extracted_skills: string[];
   strengths: string[];
   weaknesses: string[];
   suggested_roles: string[];
+  skill_gaps?: SkillGap[];
+  learning_recommendations?: LearningRecommendation[];
   improvement_suggestions: string[];
   overall_score: number;
 };
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+
+const clampNumber = (value: unknown, min: number, max: number, fallback: number): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, Math.round(numeric)));
+};
+
+const ensureString = (input: unknown, fieldName: string): string => {
+  if (typeof input !== "string" || !input.trim()) {
+    throw new Error(`Invalid AI output: ${fieldName} must be a non-empty string.`);
+  }
+
+  return input.trim();
+};
 
 const ensureStringArray = (input: unknown, fieldName: string): string[] => {
   if (!Array.isArray(input) || input.some((item) => typeof item !== "string")) {
@@ -26,34 +63,111 @@ const ensureStringArray = (input: unknown, fieldName: string): string[] => {
   return input.map((item) => item.trim()).filter(Boolean);
 };
 
-const parseStrictAnalysisJson = (raw: string): AnalysisPayload => {
-  const normalized = raw.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+const extractJsonObject = (raw: string): string => {
+  const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
 
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("AI response did not contain a JSON object.");
+  }
+
+  return trimmed.slice(start, end + 1);
+};
+
+const parseSkillGaps = (input: unknown): SkillGap[] => {
+  if (!Array.isArray(input)) {
+    throw new Error("Invalid AI output: skill_gaps must be an array.");
+  }
+
+  return input.map((item, index) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`Invalid AI output: skill_gaps[${index}] must be an object.`);
+    }
+
+    const gap = item as Record<string, unknown>;
+    const priority: SkillGapPriority =
+      gap.priority === "High" || gap.priority === "Medium" || gap.priority === "Low" ? gap.priority : "Medium";
+
+    return {
+      skill: ensureString(gap.skill, `skill_gaps[${index}].skill`),
+      current_level: clampNumber(gap.current_level, 1, 5, 1),
+      target_level: clampNumber(gap.target_level, 1, 5, 3),
+      priority,
+      reason: ensureString(gap.reason, `skill_gaps[${index}].reason`),
+    };
+  }).filter((gap) => gap.skill && gap.reason);
+};
+
+const parseLearningRecommendations = (input: unknown): LearningRecommendation[] => {
+  if (!Array.isArray(input)) {
+    throw new Error("Invalid AI output: learning_recommendations must be an array.");
+  }
+
+  return input.map((item, index) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`Invalid AI output: learning_recommendations[${index}] must be an object.`);
+    }
+
+    const recommendation = item as Record<string, unknown>;
+    return {
+      title: ensureString(recommendation.title, `learning_recommendations[${index}].title`),
+      provider: ensureString(recommendation.provider, `learning_recommendations[${index}].provider`),
+      url: ensureString(recommendation.url, `learning_recommendations[${index}].url`),
+      reason: ensureString(recommendation.reason, `learning_recommendations[${index}].reason`),
+    };
+  }).filter((recommendation) => recommendation.title && recommendation.provider && recommendation.url);
+};
+
+const buildImprovementSuggestions = (skillGaps: SkillGap[], recommendations: LearningRecommendation[]): string[] => {
+  const suggestions: string[] = [];
+
+  skillGaps.slice(0, 4).forEach((gap) => {
+    suggestions.push(`${gap.priority} priority: improve ${gap.skill} from level ${gap.current_level} toward level ${gap.target_level}. ${gap.reason}`);
+  });
+
+  recommendations.slice(0, 3).forEach((recommendation) => {
+    suggestions.push(`Consider ${recommendation.title} from ${recommendation.provider}: ${recommendation.reason}`);
+  });
+
+  return suggestions;
+};
+
+const parseStrictAnalysisJson = (raw: string): AnalysisPayload => {
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(normalized) as Record<string, unknown>;
+    parsed = JSON.parse(extractJsonObject(raw)) as Record<string, unknown>;
   } catch {
     throw new Error("Failed to parse AI response as strict JSON.");
   }
 
-  const overallScore = Number(parsed.overall_score);
-  if (!Number.isFinite(overallScore) || overallScore < 0 || overallScore > 100) {
-    throw new Error("Invalid AI output: overall_score must be a number between 0 and 100.");
+  const extractedSkills = ensureStringArray(parsed.extracted_skills, "extracted_skills");
+  const strengths = ensureStringArray(parsed.strengths, "strengths");
+  const weaknesses = ensureStringArray(parsed.weaknesses, "weaknesses");
+  const suggestedRoles = ensureStringArray(parsed.suggested_roles, "suggested_roles");
+  const skillGaps = parseSkillGaps(parsed.skill_gaps);
+  const learningRecommendations = parseLearningRecommendations(parsed.learning_recommendations);
+
+  if (!extractedSkills.length || !suggestedRoles.length || !strengths.length || !weaknesses.length) {
+    throw new Error("Invalid AI output: required analysis arrays must not be empty.");
   }
 
   return {
-    extracted_skills: ensureStringArray(parsed.extracted_skills, "extracted_skills"),
-    strengths: ensureStringArray(parsed.strengths, "strengths"),
-    weaknesses: ensureStringArray(parsed.weaknesses, "weaknesses"),
-    suggested_roles: ensureStringArray(parsed.suggested_roles, "suggested_roles"),
-    improvement_suggestions: ensureStringArray(parsed.improvement_suggestions, "improvement_suggestions"),
-    overall_score: overallScore,
+    detected_domain: ensureString(parsed.detected_domain, "detected_domain"),
+    extracted_skills: extractedSkills.slice(0, 16),
+    strengths: strengths.slice(0, 6),
+    weaknesses: weaknesses.slice(0, 6),
+    suggested_roles: suggestedRoles.slice(0, 8),
+    skill_gaps: skillGaps.slice(0, 8),
+    learning_recommendations: learningRecommendations.slice(0, 6),
+    improvement_suggestions: buildImprovementSuggestions(skillGaps, learningRecommendations),
+    overall_score: clampNumber(parsed.overall_score, 0, 100, 60),
   };
 };
 
 const stringifyErrorForDetection = (error: unknown): string => {
   if (error instanceof Error) {
-    return `${error.name} ${error.message} ${error.stack ?? ""}`;
+    return `${error.name} ${error.message}`;
   }
 
   try {
@@ -61,18 +175,6 @@ const stringifyErrorForDetection = (error: unknown): string => {
   } catch {
     return String(error);
   }
-};
-
-const isGeminiQuotaError = (error: unknown): boolean => {
-  const message = stringifyErrorForDetection(error).toLowerCase();
-  return (
-    message.includes("429") ||
-    message.includes("resource_exhausted") ||
-    message.includes("quota") ||
-    message.includes("billing") ||
-    message.includes("rate-limit") ||
-    message.includes("rate limit")
-  );
 };
 
 const uniquePush = (items: string[], value: string) => {
@@ -275,9 +377,15 @@ const extractPdfTextWithPdfJs = async (buffer: Buffer): Promise<string> => {
 };
 
 const extractPdfTextWithPdfParse = async (buffer: Buffer): Promise<string> => {
-  const pdfParse = (await import("pdf-parse")).default;
-  const parsed = await pdfParse(buffer);
-  return parsed.text ?? "";
+  const { PDFParse } = await import("pdf-parse");
+  const parser = new PDFParse({ data: new Uint8Array(buffer) });
+
+  try {
+    const parsed = await parser.getText();
+    return parsed.text ?? "";
+  } finally {
+    await parser.destroy().catch(() => undefined);
+  }
 };
 
 const extractPdfText = async (buffer: Buffer): Promise<string> => {
@@ -360,9 +468,6 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ error: "Supabase environment variables are missing." });
   }
 
-  if (!process.env.GEMINI_API_KEY) {
-    return res.status(500).json({ error: "GEMINI_API_KEY is not set." });
-  }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: {
@@ -488,36 +593,61 @@ export default async function handler(req: any, res: any) {
       throw new Error("No readable text could be extracted from the CV.");
     }
 
-    const prompt = `You are a strict JSON API. Analyze the CV text below and return JSON only with this exact shape and keys:\n{
+    const prompt = `You are a strict JSON API. Analyze the CV for internship readiness.
+Detect the student’s career domain from the CV evidence. Do not force every CV into software.
+Support different domains such as software, chemical engineering, psychology/HR, law, finance, marketing, design, education, engineering, and health.
+Return realistic skill gaps based on the CV. Use conservative wording. Do not invent fake certificates or fake websites.
+Return only JSON, no markdown. Use this exact structure and keys:
+{
+  "detected_domain": string,
+  "suggested_roles": string[],
   "extracted_skills": string[],
   "strengths": string[],
   "weaknesses": string[],
-  "suggested_roles": string[],
-  "improvement_suggestions": string[],
+  "skill_gaps": [
+    {
+      "skill": string,
+      "current_level": number,
+      "target_level": number,
+      "priority": "High" | "Medium" | "Low",
+      "reason": string
+    }
+  ],
+  "learning_recommendations": [
+    {
+      "title": string,
+      "provider": string,
+      "url": string,
+      "reason": string
+    }
+  ],
   "overall_score": number
-}\nDo not include markdown, prose, or code fences. CV text:\n${extractedText}`;
+}
+Levels must be 1 to 5. overall_score must be 0 to 100.
+CV text:
+${extractedText}`;
 
-    let parsed: AnalysisPayload;
-    try {
-      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await genAI.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: prompt,
-      });
+    let parsed: AnalysisPayload = buildFallbackAnalysis(extractedText);
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await genAI.models.generateContent({
+          model: GEMINI_MODEL,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
 
-      const rawText = response.text?.trim();
-      if (!rawText) {
-        throw new Error("AI returned an empty response.");
+        const rawText = response.text?.trim();
+        if (!rawText) {
+          throw new Error("AI returned an empty response.");
+        }
+
+        parsed = parseStrictAnalysisJson(rawText);
+      } catch {
+        console.error("Gemini analysis failed, using fallback.");
       }
-
-      parsed = parseStrictAnalysisJson(rawText);
-    } catch (geminiError) {
-      if (!isGeminiQuotaError(geminiError)) {
-        throw geminiError;
-      }
-
-      console.error("Gemini quota unavailable, using fallback CV analysis", geminiError);
-      parsed = buildFallbackAnalysis(extractedText);
     }
 
     const reportPayload = {
@@ -549,7 +679,12 @@ export default async function handler(req: any, res: any) {
 
     if (docUpdateError) throw new Error(docUpdateError.message);
 
-    return res.status(200).json(reportPayload);
+    return res.status(200).json({
+      ...reportPayload,
+      detected_domain: parsed.detected_domain,
+      skill_gaps: parsed.skill_gaps,
+      learning_recommendations: parsed.learning_recommendations,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("CV analyze failed", error);
