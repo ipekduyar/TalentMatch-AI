@@ -1,4 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import mammoth from "mammoth";
 import { execFile } from "node:child_process";
@@ -36,7 +35,23 @@ type AnalysisPayload = {
   overall_score: number;
 };
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_GENERATE_CONTENT_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const LOG_PREVIEW_LIMIT = 500;
+
+const truncateForLog = (value: string, limit = LOG_PREVIEW_LIMIT): string =>
+  value.length > limit ? `${value.slice(0, limit)}…` : value;
+
+const ANALYSIS_SCHEMA_FIELDS = [
+  "detected_domain",
+  "suggested_roles",
+  "extracted_skills",
+  "strengths",
+  "weaknesses",
+  "skill_gaps",
+  "learning_recommendations",
+  "overall_score",
+] as const;
 
 const clampNumber = (value: unknown, min: number, max: number, fallback: number): number => {
   const numeric = Number(value);
@@ -119,6 +134,86 @@ const parseLearningRecommendations = (input: unknown): LearningRecommendation[] 
   }).filter((recommendation) => recommendation.title && recommendation.provider && recommendation.url);
 };
 
+const isNonEmptyString = (input: unknown): input is string =>
+  typeof input === "string" && Boolean(input.trim());
+
+const isNonEmptyStringArray = (input: unknown): input is string[] =>
+  Array.isArray(input) && input.length > 0 && input.every(isNonEmptyString);
+
+const isValidSkillGapInput = (input: unknown): boolean => {
+  if (!Array.isArray(input)) {
+    return false;
+  }
+
+  return input.every((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+
+    const gap = item as Record<string, unknown>;
+    const currentLevel = Number(gap.current_level);
+    const targetLevel = Number(gap.target_level);
+
+    return (
+      isNonEmptyString(gap.skill) &&
+      Number.isFinite(currentLevel) &&
+      currentLevel >= 1 &&
+      currentLevel <= 5 &&
+      Number.isFinite(targetLevel) &&
+      targetLevel >= 1 &&
+      targetLevel <= 5 &&
+      (gap.priority === "High" || gap.priority === "Medium" || gap.priority === "Low") &&
+      isNonEmptyString(gap.reason)
+    );
+  });
+};
+
+const isValidLearningRecommendationInput = (input: unknown): boolean => {
+  if (!Array.isArray(input)) {
+    return false;
+  }
+
+  return input.every((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+
+    const recommendation = item as Record<string, unknown>;
+    return (
+      isNonEmptyString(recommendation.title) &&
+      isNonEmptyString(recommendation.provider) &&
+      isNonEmptyString(recommendation.url) &&
+      isNonEmptyString(recommendation.reason)
+    );
+  });
+};
+
+const collectInvalidAnalysisFields = (parsed: Record<string, unknown>): string[] =>
+  ANALYSIS_SCHEMA_FIELDS.filter((field) => {
+    switch (field) {
+      case "detected_domain":
+        return !isNonEmptyString(parsed.detected_domain);
+      case "suggested_roles":
+        return !isNonEmptyStringArray(parsed.suggested_roles);
+      case "extracted_skills":
+        return !isNonEmptyStringArray(parsed.extracted_skills);
+      case "strengths":
+        return !isNonEmptyStringArray(parsed.strengths);
+      case "weaknesses":
+        return !isNonEmptyStringArray(parsed.weaknesses);
+      case "skill_gaps":
+        return !isValidSkillGapInput(parsed.skill_gaps);
+      case "learning_recommendations":
+        return !isValidLearningRecommendationInput(parsed.learning_recommendations);
+      case "overall_score": {
+        const score = Number(parsed.overall_score);
+        return !Number.isFinite(score) || score < 0 || score > 100;
+      }
+      default:
+        return true;
+    }
+  });
+
 const buildImprovementSuggestions = (skillGaps: SkillGap[], recommendations: LearningRecommendation[]): string[] => {
   const suggestions: string[] = [];
 
@@ -138,7 +233,18 @@ const parseStrictAnalysisJson = (raw: string): AnalysisPayload => {
   try {
     parsed = JSON.parse(extractJsonObject(raw)) as Record<string, unknown>;
   } catch {
-    throw new Error("Failed to parse AI response as strict JSON.");
+    console.warn("Gemini JSON parsing failed", {
+      preview: truncateForLog(raw),
+    });
+    throw new Error("Failed to parse Gemini response as strict JSON.");
+  }
+
+  const invalidFields = collectInvalidAnalysisFields(parsed);
+  if (invalidFields.length) {
+    console.warn("Gemini schema validation failed", {
+      invalidFields,
+    });
+    throw new Error("Gemini response failed schema validation.");
   }
 
   const extractedSkills = ensureStringArray(parsed.extracted_skills, "extracted_skills");
@@ -175,6 +281,65 @@ const stringifyErrorForDetection = (error: unknown): string => {
   } catch {
     return String(error);
   }
+};
+
+type GeminiGenerateContentResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+};
+
+const extractGeminiCandidateText = (responseJson: GeminiGenerateContentResponse): string =>
+  responseJson.candidates
+    ?.flatMap((candidate) => candidate.content?.parts ?? [])
+    .map((part) => part.text)
+    .filter((text): text is string => typeof text === "string")
+    .join("\n")
+    .trim() ?? "";
+
+const requestGeminiAnalysis = async (prompt: string, apiKey: string): Promise<string> => {
+  const response = await fetch(GEMINI_GENERATE_CONTENT_URL, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const responseBody = await response.text();
+    console.warn("Gemini request failed", {
+      status: response.status,
+      statusText: response.statusText,
+      responseBody: truncateForLog(responseBody),
+    });
+    throw new Error(`Gemini request failed with status ${response.status}.`);
+  }
+
+  const responseJson = (await response.json()) as GeminiGenerateContentResponse;
+  const rawText = extractGeminiCandidateText(responseJson);
+
+  if (!rawText) {
+    console.warn("Gemini response did not contain candidate text.");
+    throw new Error("Gemini response did not contain candidate text.");
+  }
+
+  return rawText;
 };
 
 const uniquePush = (items: string[], value: string) => {
@@ -630,23 +795,13 @@ ${extractedText}`;
     let parsed: AnalysisPayload = buildFallbackAnalysis(extractedText);
     if (process.env.GEMINI_API_KEY) {
       try {
-        const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const response = await genAI.models.generateContent({
-          model: GEMINI_MODEL,
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-          },
-        });
-
-        const rawText = response.text?.trim();
-        if (!rawText) {
-          throw new Error("AI returned an empty response.");
-        }
-
+        const rawText = await requestGeminiAnalysis(prompt, process.env.GEMINI_API_KEY);
         parsed = parseStrictAnalysisJson(rawText);
-      } catch {
-        console.error("Gemini analysis failed, using fallback.");
+      } catch (error) {
+        console.error("Gemini analysis failed, using fallback.", {
+          error: stringifyErrorForDetection(error),
+          model: GEMINI_MODEL,
+        });
       }
     }
 
