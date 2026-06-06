@@ -39,6 +39,7 @@ type AnalysisPayload = {
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const GEMINI_GENERATE_CONTENT_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const LOG_PREVIEW_LIMIT = 500;
+const GEMINI_ANALYSIS_METADATA_PREFIX = "__gemini_analysis_metadata__:";
 
 const truncateForLog = (value: string, limit = LOG_PREVIEW_LIMIT): string =>
   value.length > limit ? `${value.slice(0, limit)}…` : value;
@@ -115,6 +116,15 @@ const parseSkillGaps = (input: unknown): SkillGap[] => {
   }).filter((gap) => gap.skill && gap.reason);
 };
 
+const isValidHttpUrl = (input: string): boolean => {
+  try {
+    const url = new URL(input);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
 const parseLearningRecommendations = (input: unknown): LearningRecommendation[] => {
   if (!Array.isArray(input)) {
     throw new Error("Invalid AI output: learning_recommendations must be an array.");
@@ -126,10 +136,16 @@ const parseLearningRecommendations = (input: unknown): LearningRecommendation[] 
     }
 
     const recommendation = item as Record<string, unknown>;
+    const url = ensureString(recommendation.url, `learning_recommendations[${index}].url`);
+
+    if (!isValidHttpUrl(url)) {
+      throw new Error(`Invalid AI output: learning_recommendations[${index}].url must be a valid http(s) URL.`);
+    }
+
     return {
       title: ensureString(recommendation.title, `learning_recommendations[${index}].title`),
       provider: ensureString(recommendation.provider, `learning_recommendations[${index}].provider`),
-      url: ensureString(recommendation.url, `learning_recommendations[${index}].url`),
+      url,
       reason: ensureString(recommendation.reason, `learning_recommendations[${index}].reason`),
     };
   }).filter((recommendation) => recommendation.title && recommendation.provider && recommendation.url);
@@ -184,6 +200,7 @@ const isValidLearningRecommendationInput = (input: unknown): boolean => {
       isNonEmptyString(recommendation.title) &&
       isNonEmptyString(recommendation.provider) &&
       isNonEmptyString(recommendation.url) &&
+      isValidHttpUrl(recommendation.url.trim()) &&
       isNonEmptyString(recommendation.reason)
     );
   });
@@ -227,6 +244,31 @@ const buildImprovementSuggestions = (skillGaps: SkillGap[], recommendations: Lea
   });
 
   return suggestions;
+};
+
+const buildPersistedImprovementSuggestions = (
+  suggestions: string[],
+  analysisSource: AnalysisSource,
+  fallbackReason: string,
+  parsed: AnalysisPayload
+): string[] => {
+  const cleanSuggestions = suggestions.filter((item) => typeof item === "string" && item.trim());
+
+  if (analysisSource !== "gemini") {
+    return cleanSuggestions;
+  }
+
+  return [
+    ...cleanSuggestions,
+    `${GEMINI_ANALYSIS_METADATA_PREFIX}${JSON.stringify({
+      analysis_source: analysisSource,
+      analysis_model: GEMINI_MODEL,
+      fallback_reason: fallbackReason,
+      detected_domain: parsed.detected_domain,
+      skill_gaps: parsed.skill_gaps ?? [],
+      learning_recommendations: parsed.learning_recommendations ?? [],
+    })}`,
+  ];
 };
 
 const parseStrictAnalysisJson = (raw: string): AnalysisPayload => {
@@ -842,6 +884,13 @@ ${extractedText}`;
       });
     }
 
+    const persistedImprovementSuggestions = buildPersistedImprovementSuggestions(
+      parsed.improvement_suggestions,
+      analysisSource,
+      fallbackReason,
+      parsed
+    );
+
     const reportPayload = {
       document_id: documentId,
       student_id: studentId,
@@ -856,8 +905,13 @@ ${extractedText}`;
       error_message: null,
     };
 
+    const persistedReportPayload = {
+      ...reportPayload,
+      improvement_suggestions: persistedImprovementSuggestions,
+    };
+
     try {
-      await persistCvAnalysisReport(reportPayload);
+      await persistCvAnalysisReport(persistedReportPayload);
     } catch (persistError) {
       console.error("Failed to persist CV analysis success state", persistError);
       throw persistError;
@@ -876,6 +930,8 @@ ${extractedText}`;
       detected_domain: parsed.detected_domain,
       skill_gaps: parsed.skill_gaps,
       learning_recommendations: parsed.learning_recommendations,
+      gemini_skill_gaps: analysisSource === "gemini" ? parsed.skill_gaps : [],
+      gemini_learning_recommendations: analysisSource === "gemini" ? parsed.learning_recommendations : [],
       analysis_source: analysisSource,
       analysis_model: analysisSource === "gemini" ? GEMINI_MODEL : null,
     });

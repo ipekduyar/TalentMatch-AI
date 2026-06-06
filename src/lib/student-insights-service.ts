@@ -1,12 +1,36 @@
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
+type AnalysisSource = "gemini" | "rule_based";
+
+type GeminiSkillGap = {
+  skill: string;
+  current_level: number;
+  target_level: number;
+  priority: SkillGapUrgency;
+  reason: string;
+};
+
+type GeminiLearningRecommendation = {
+  title: string;
+  provider: string;
+  url: string;
+  reason: string;
+};
+
 export type StudentCvAnalysis = {
+  detected_domain?: string;
   extracted_skills: string[];
   suggested_roles: string[];
   strengths: string[];
   weaknesses: string[];
+  skill_gaps?: GeminiSkillGap[];
+  learning_recommendations?: GeminiLearningRecommendation[];
+  gemini_skill_gaps?: GeminiSkillGap[];
+  gemini_learning_recommendations?: GeminiLearningRecommendation[];
   improvement_suggestions: string[];
   overall_score: number | null;
+  analysis_source?: AnalysisSource;
+  analysis_model?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -33,7 +57,72 @@ type GeneratedSkillGap = {
   resources: Resource[];
 };
 
+const GEMINI_ANALYSIS_METADATA_PREFIX = "__gemini_analysis_metadata__:";
+
 const safe = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+const clamp = (value: unknown, min: number, max: number, fallback: number): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(numeric)));
+};
+const validHttpUrl = (value: unknown): value is string => {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+const nonEmpty = (value: unknown): value is string => typeof value === "string" && Boolean(value.trim());
+const sanitizeGeminiSkillGaps = (input: unknown): GeminiSkillGap[] => {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((item): GeminiSkillGap | null => {
+      if (!item || typeof item !== "object") return null;
+      const gap = item as Record<string, unknown>;
+      if (!nonEmpty(gap.skill) || !nonEmpty(gap.reason)) return null;
+      const priority: SkillGapUrgency =
+        gap.priority === "High" || gap.priority === "Medium" || gap.priority === "Low" ? gap.priority : "Medium";
+
+      return {
+        skill: gap.skill.trim(),
+        current_level: clamp(gap.current_level, 1, 5, 1),
+        target_level: clamp(gap.target_level, 1, 5, 3),
+        priority,
+        reason: gap.reason.trim(),
+      };
+    })
+    .filter((gap): gap is GeminiSkillGap => Boolean(gap));
+};
+const sanitizeGeminiLearningRecommendations = (input: unknown): GeminiLearningRecommendation[] => {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((item): GeminiLearningRecommendation | null => {
+      if (!item || typeof item !== "object") return null;
+      const recommendation = item as Record<string, unknown>;
+      if (!nonEmpty(recommendation.title) || !nonEmpty(recommendation.provider) || !validHttpUrl(recommendation.url) || !nonEmpty(recommendation.reason)) return null;
+
+      return {
+        title: recommendation.title.trim(),
+        provider: recommendation.provider.trim(),
+        url: recommendation.url.trim(),
+        reason: recommendation.reason.trim(),
+      };
+    })
+    .filter((recommendation): recommendation is GeminiLearningRecommendation => Boolean(recommendation));
+};
+const hasGeminiSource = (analysis: StudentCvAnalysis | null): boolean => analysis?.analysis_source === "gemini";
+const getValidatedGeminiSkillGaps = (analysis: StudentCvAnalysis | null): GeminiSkillGap[] =>
+  sanitizeGeminiSkillGaps(analysis?.skill_gaps?.length ? analysis.skill_gaps : analysis?.gemini_skill_gaps);
+const getValidatedGeminiLearningRecommendations = (analysis: StudentCvAnalysis | null): GeminiLearningRecommendation[] =>
+  sanitizeGeminiLearningRecommendations(
+    analysis?.learning_recommendations?.length
+      ? analysis.learning_recommendations
+      : analysis?.gemini_learning_recommendations
+  );
 const l = (v: string) => v.toLowerCase();
 const R = (resource: Resource): Resource => resource;
 const norm = (v: string) => l(v).replace(/[^\p{L}\p{N}\s+/.-]/gu, " ").replace(/\s+/g, " ").trim();
@@ -234,14 +323,60 @@ export const getCurrentStudentId = async (): Promise<string | null> => { /*...*/
   return s?.student_id ?? null;
 };
 
+type PersistedGeminiAnalysisMetadata = {
+  analysis_source?: AnalysisSource;
+  analysis_model?: string | null;
+  detected_domain?: string;
+  skill_gaps?: unknown;
+  learning_recommendations?: unknown;
+};
+
+const parsePersistedGeminiMetadata = (items: string[]): PersistedGeminiAnalysisMetadata | null => {
+  const marker = items.find((item) => item.startsWith(GEMINI_ANALYSIS_METADATA_PREFIX));
+  if (!marker) return null;
+
+  try {
+    return JSON.parse(marker.slice(GEMINI_ANALYSIS_METADATA_PREFIX.length)) as PersistedGeminiAnalysisMetadata;
+  } catch {
+    return null;
+  }
+};
+
+const withoutPersistedMetadata = (items: string[]): string[] =>
+  items.filter((item) => !item.startsWith(GEMINI_ANALYSIS_METADATA_PREFIX));
+
 export const getLatestStudentCvAnalysis = async (): Promise<StudentCvAnalysis | null> => {
   const studentId = await getCurrentStudentId(); if (!studentId || !supabase) return null;
   const { data } = await supabase.from("cv_analysis_reports").select("extracted_skills,suggested_roles,strengths,weaknesses,improvement_suggestions,overall_score,created_at,updated_at").eq("student_id", studentId).eq("analysis_status", "completed").order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!data) return null;
-  return { extracted_skills: safe(data.extracted_skills), suggested_roles: safe(data.suggested_roles), strengths: safe(data.strengths), weaknesses: safe(data.weaknesses), improvement_suggestions: safe(data.improvement_suggestions), overall_score: typeof data.overall_score === "number" ? data.overall_score : null, created_at: data.created_at ?? "", updated_at: data.updated_at ?? "" };
+  const persistedSuggestions = safe(data.improvement_suggestions);
+  const geminiMetadata = parsePersistedGeminiMetadata(persistedSuggestions);
+  const skillGaps = sanitizeGeminiSkillGaps(geminiMetadata?.skill_gaps);
+  const learningRecommendations = sanitizeGeminiLearningRecommendations(geminiMetadata?.learning_recommendations);
+  return {
+    detected_domain: geminiMetadata?.detected_domain,
+    extracted_skills: safe(data.extracted_skills),
+    suggested_roles: safe(data.suggested_roles),
+    strengths: safe(data.strengths),
+    weaknesses: safe(data.weaknesses),
+    skill_gaps: skillGaps,
+    learning_recommendations: learningRecommendations,
+    gemini_skill_gaps: skillGaps,
+    gemini_learning_recommendations: learningRecommendations,
+    improvement_suggestions: withoutPersistedMetadata(persistedSuggestions),
+    overall_score: typeof data.overall_score === "number" ? clamp(data.overall_score, 0, 100) : null,
+    analysis_source: geminiMetadata?.analysis_source,
+    analysis_model: geminiMetadata?.analysis_model,
+    created_at: data.created_at ?? "",
+    updated_at: data.updated_at ?? "",
+  };
 };
 
 export const detectStudentDomain = (analysis: StudentCvAnalysis | null) => {
+  if (hasGeminiSource(analysis) && analysis?.detected_domain?.trim()) {
+    return { domain: analysis.detected_domain.trim(), confidence: 100, matchedKeywords: [analysis.detected_domain.trim()], suggestedRoles: safe(analysis.suggested_roles) };
+  }
+
   if (!DOMAIN_TEMPLATES.length) {
     return { domain: "General / Early Career", confidence: 40, matchedKeywords: [], suggestedRoles: [] };
   }
@@ -320,6 +455,34 @@ export const getDomainSkillTemplate = (domain: string | null | undefined): Domai
 const getSafeTemplate = (domain: string | null | undefined) => getDomainSkillTemplate(domain) ?? GENERAL_TEMPLATE;
 
 export const generateSkillGaps = (analysis: StudentCvAnalysis | null) => {
+  const geminiSkillGaps = getValidatedGeminiSkillGaps(analysis);
+  if (hasGeminiSource(analysis) && geminiSkillGaps.length) {
+    console.info("Using Gemini skill gaps directly", {
+      count: analysis.skill_gaps?.length ?? 0
+    });
+
+    const geminiResources = getValidatedGeminiLearningRecommendations(analysis).map((recommendation): Resource => ({
+      title: recommendation.title,
+      provider: recommendation.provider,
+      url: recommendation.url,
+      type: "Technical",
+      level: "Intermediate",
+      cost_type: "Freemium",
+      description: recommendation.reason,
+    }));
+    const relatedRoles = safe(analysis?.suggested_roles);
+
+    return geminiSkillGaps.map((gap): GeneratedSkillGap => ({
+      skill: gap.skill,
+      currentLevel: clamp(gap.current_level, 1, 5, 1),
+      targetLevel: clamp(gap.target_level, 1, 5, 3),
+      urgency: gap.priority,
+      reason: gap.reason,
+      relatedRoles,
+      resources: geminiResources,
+    }));
+  }
+
   const det = detectStudentDomain(analysis);
   const isConfidentNonGeneral = det.confidence >= 55 && det.domain !== "General / Early Career";
   // Defensive lock: confident non-general detections must never use the General template.
@@ -416,6 +579,33 @@ export const generateSkillGaps = (analysis: StudentCvAnalysis | null) => {
 };
 
 export const generateLearningPath = (analysis: StudentCvAnalysis | null) => {
+  const geminiRecommendations = getValidatedGeminiLearningRecommendations(analysis);
+  if (hasGeminiSource(analysis) && geminiRecommendations.length) {
+    console.info("Using Gemini learning recommendations directly", {
+      count: analysis.learning_recommendations?.length ?? 0
+    });
+
+    const geminiSkillGaps = getValidatedGeminiSkillGaps(analysis);
+    const fallbackSkill = geminiSkillGaps[0]?.skill ?? safe(analysis?.extracted_skills)[0] ?? "Career Development";
+    const resources = geminiRecommendations.map((recommendation, idx) => ({
+      id: `gemini-res-${idx}-${recommendation.title}`,
+      title: recommendation.title,
+      provider: recommendation.provider,
+      url: recommendation.url,
+      skill: geminiSkillGaps[idx % Math.max(geminiSkillGaps.length, 1)]?.skill ?? fallbackSkill,
+      type: "Technical" as const,
+      level: "Intermediate" as const,
+      cost_type: "Freemium" as const,
+      description: recommendation.reason,
+    }));
+
+    return {
+      domain: analysis?.detected_domain ?? detectStudentDomain(analysis).domain,
+      resources,
+      roadmap: { week: resources.slice(0, 3), month: resources.slice(3, 7), quarter: resources.slice(7, 12) },
+    };
+  }
+
   const det = detectStudentDomain(analysis);
   const isConfidentNonGeneral = det.confidence >= 55 && det.domain !== "General / Early Career";
   // Defensive lock: do not allow General override when domain is confidently non-general.
