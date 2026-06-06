@@ -13,43 +13,9 @@ import {
   Briefcase,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { getLatestSearchCvAnalysis, getSearchActivePostings, SearchPosting } from "@/lib/search-service";
+import { calculatePostingMatch, getLatestSearchCvAnalysis, getSearchActivePostings, PostingMatchResult, SearchPosting } from "@/lib/search-service";
 
-type SearchPostingWithScore = SearchPosting & { score: number };
-
-const normalize = (value: string | null | undefined) => (value ?? "").toLowerCase();
-
-const calculateScore = (posting: SearchPosting, analysis: Awaited<ReturnType<typeof getLatestSearchCvAnalysis>>): number => {
-  if (!analysis) return 75;
-
-  let score = 60;
-
-  const title = normalize(posting.title);
-  const description = normalize(posting.description);
-  const industry = normalize(posting.industry);
-
-  for (const role of analysis.suggested_roles) {
-    const roleText = normalize(role);
-    if (!roleText) continue;
-    if (title.includes(roleText)) score += 10;
-    else if (description.includes(roleText)) score += 5;
-    if (industry.includes(roleText)) score += 3;
-  }
-
-  const requiredSkills = posting.required_skills.map(normalize);
-  const desiredSkills = posting.desired_skills.map(normalize);
-
-  for (const skill of analysis.extracted_skills) {
-    const skillText = normalize(skill);
-    if (!skillText) continue;
-
-    if (requiredSkills.some((required) => required.includes(skillText) || skillText.includes(required))) score += 5;
-    else if (desiredSkills.some((desired) => desired.includes(skillText) || skillText.includes(desired))) score += 3;
-    else if (description.includes(skillText)) score += 1;
-  }
-
-  return Math.max(60, Math.min(98, score));
-};
+type SearchPostingWithScore = SearchPosting & PostingMatchResult;
 
 export const SearchPage = () => {
   const [search, setSearch] = useState("");
@@ -83,7 +49,7 @@ export const SearchPage = () => {
 
     const scored = postings.map((posting) => ({
       ...posting,
-      score: calculateScore(posting, analysis),
+      ...calculatePostingMatch(posting, analysis),
     }));
 
     const searched = scored.filter((posting) => {
@@ -196,8 +162,14 @@ const PostingCard = ({ posting }: { posting: SearchPostingWithScore; key?: strin
             {posting.title}
           </h3>
           <p className="text-xs font-black text-slate-400 uppercase tracking-[0.1em]">{companyName}</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed line-clamp-2" title={posting.matchReason}>
+            {posting.matchReason}
+          </p>
 
           <div className="flex flex-wrap gap-2 pt-4">
+            <div className="flex items-center text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full uppercase tracking-widest">
+              {posting.domainMatch} domain
+            </div>
             <div className="flex items-center text-[10px] font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full uppercase tracking-wider">
               <MapPin className="w-3 h-3 mr-1.5" />
               {posting.location}
