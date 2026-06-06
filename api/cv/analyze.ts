@@ -41,6 +41,85 @@ const GEMINI_GENERATE_CONTENT_URL = `https://generativelanguage.googleapis.com/v
 const LOG_PREVIEW_LIMIT = 500;
 const GEMINI_ANALYSIS_METADATA_PREFIX = "__gemini_analysis_metadata__:";
 
+
+const TRUSTED_LEARNING_PROVIDER_DOMAINS = [
+  "coursera.org",
+  "edx.org",
+  "learn.microsoft.com",
+  "developers.google.com",
+  "freecodecamp.org",
+  "developer.mozilla.org",
+  "kaggle.com",
+  "shrm.org",
+  "apa.org",
+  "openlearn.open.ac.uk",
+  "ocw.mit.edu",
+  "skillsbuild.org",
+] as const;
+
+const TRUSTED_LEARNING_PROVIDER_HOME_URLS = [
+  { domain: "coursera.org", provider: "Coursera", url: "https://www.coursera.org/search?query=" },
+  { domain: "edx.org", provider: "edX", url: "https://www.edx.org/search?q=" },
+  { domain: "learn.microsoft.com", provider: "Microsoft Learn", url: "https://learn.microsoft.com/en-us/training/browse/?terms=" },
+  { domain: "developers.google.com", provider: "Google Developers", url: "https://developers.google.com/search?q=" },
+  { domain: "freecodecamp.org", provider: "freeCodeCamp", url: "https://www.freecodecamp.org/news/search/?query=" },
+  { domain: "developer.mozilla.org", provider: "MDN Web Docs", url: "https://developer.mozilla.org/en-US/search?q=" },
+  { domain: "kaggle.com", provider: "Kaggle", url: "https://www.kaggle.com/learn" },
+  { domain: "shrm.org", provider: "SHRM", url: "https://www.shrm.org/search#q=" },
+  { domain: "apa.org", provider: "APA", url: "https://www.apa.org/search?query=" },
+  { domain: "openlearn.open.ac.uk", provider: "OpenLearn", url: "https://openlearn.open.ac.uk/" },
+  { domain: "ocw.mit.edu", provider: "MIT OpenCourseWare", url: "https://ocw.mit.edu/search/?q=" },
+  { domain: "skillsbuild.org", provider: "IBM SkillsBuild", url: "https://skillsbuild.org/" },
+] as const;
+
+const LEARNING_PROVIDER_FALLBACKS = {
+  software: TRUSTED_LEARNING_PROVIDER_HOME_URLS[0],
+  data: TRUSTED_LEARNING_PROVIDER_HOME_URLS[6],
+  hr: TRUSTED_LEARNING_PROVIDER_HOME_URLS[7],
+  psychology: TRUSTED_LEARNING_PROVIDER_HOME_URLS[8],
+  law: TRUSTED_LEARNING_PROVIDER_HOME_URLS[0],
+  compliance: TRUSTED_LEARNING_PROVIDER_HOME_URLS[0],
+  business: TRUSTED_LEARNING_PROVIDER_HOME_URLS[0],
+  general: TRUSTED_LEARNING_PROVIDER_HOME_URLS[9],
+} as const;
+
+const isTrustedLearningUrl = (input: string): boolean => {
+  try {
+    const hostname = new URL(input).hostname.toLowerCase().replace(/^www\./, "");
+    return TRUSTED_LEARNING_PROVIDER_DOMAINS.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+};
+
+const findTrustedProviderByText = (text: string) => {
+  const normalized = text.toLowerCase();
+  return TRUSTED_LEARNING_PROVIDER_HOME_URLS.find(
+    ({ domain, provider }) => normalized.includes(provider.toLowerCase()) || normalized.includes(domain)
+  );
+};
+
+const chooseTrustedProviderFallback = (recommendation: Record<string, unknown>) => {
+  const text = `${recommendation.provider ?? ""} ${recommendation.title ?? ""} ${recommendation.reason ?? ""}`.toLowerCase();
+  const explicitProvider = findTrustedProviderByText(text);
+  if (explicitProvider) return explicitProvider;
+  if (/human resources|\bhr\b|recruit|talent|employee|people operations/.test(text)) return LEARNING_PROVIDER_FALLBACKS.hr;
+  if (/psychology|organizational|assessment|counsel/.test(text)) return LEARNING_PROVIDER_FALLBACKS.psychology;
+  if (/law|legal|compliance|contract|policy|regulation/.test(text)) return LEARNING_PROVIDER_FALLBACKS.law;
+  if (/data|machine learning|analytics|python|kaggle|statistics/.test(text)) return LEARNING_PROVIDER_FALLBACKS.data;
+  if (/software|web|javascript|typescript|react|node|api|developer|programming/.test(text)) return LEARNING_PROVIDER_FALLBACKS.software;
+  if (/business|finance|marketing|management|communication/.test(text)) return LEARNING_PROVIDER_FALLBACKS.business;
+  return LEARNING_PROVIDER_FALLBACKS.general;
+};
+
+const buildTrustedLearningUrl = (fallback: (typeof TRUSTED_LEARNING_PROVIDER_HOME_URLS)[number], title: string): string => {
+  if (fallback.url.endsWith("=") || fallback.url.endsWith("q=")) {
+    return `${fallback.url}${encodeURIComponent(title)}`;
+  }
+
+  return fallback.url;
+};
+
 const truncateForLog = (value: string, limit = LOG_PREVIEW_LIMIT): string =>
   value.length > limit ? `${value.slice(0, limit)}…` : value;
 
@@ -130,26 +209,41 @@ const parseLearningRecommendations = (input: unknown): LearningRecommendation[] 
     throw new Error("Invalid AI output: learning_recommendations must be an array.");
   }
 
-  return input.map((item, index) => {
-    if (!item || typeof item !== "object") {
-      throw new Error(`Invalid AI output: learning_recommendations[${index}] must be an object.`);
-    }
+  return input
+    .map((item, index) => {
+      if (!item || typeof item !== "object") {
+        throw new Error(`Invalid AI output: learning_recommendations[${index}] must be an object.`);
+      }
 
-    const recommendation = item as Record<string, unknown>;
-    const url = ensureString(recommendation.url, `learning_recommendations[${index}].url`);
+      const recommendation = item as Record<string, unknown>;
+      const title = ensureString(recommendation.title, `learning_recommendations[${index}].title`);
+      const provider = ensureString(recommendation.provider, `learning_recommendations[${index}].provider`);
+      const reason = ensureString(recommendation.reason, `learning_recommendations[${index}].reason`);
+      const rawUrl = typeof recommendation.url === "string" ? recommendation.url.trim() : "";
+      const fallbackProvider = chooseTrustedProviderFallback({ ...recommendation, title, provider, reason });
+      const url = rawUrl && isValidHttpUrl(rawUrl) && isTrustedLearningUrl(rawUrl)
+        ? rawUrl
+        : buildTrustedLearningUrl(fallbackProvider, title);
 
-    if (!isValidHttpUrl(url)) {
-      throw new Error(`Invalid AI output: learning_recommendations[${index}].url must be a valid http(s) URL.`);
-    }
-
-    return {
-      title: ensureString(recommendation.title, `learning_recommendations[${index}].title`),
-      provider: ensureString(recommendation.provider, `learning_recommendations[${index}].provider`),
-      url,
-      reason: ensureString(recommendation.reason, `learning_recommendations[${index}].reason`),
-    };
-  }).filter((recommendation) => recommendation.title && recommendation.provider && recommendation.url);
+      return {
+        title,
+        provider,
+        url,
+        reason,
+      };
+    })
+    .filter((recommendation) => recommendation.title && recommendation.provider && recommendation.url && isTrustedLearningUrl(recommendation.url));
 };
+
+
+const uniqueStrings = (items: string[]): string[] =>
+  items.reduce<string[]>((uniqueItems, item) => {
+    const trimmed = item.trim();
+    if (trimmed && !uniqueItems.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())) {
+      uniqueItems.push(trimmed);
+    }
+    return uniqueItems;
+  }, []);
 
 const isNonEmptyString = (input: unknown): input is string =>
   typeof input === "string" && Boolean(input.trim());
@@ -267,6 +361,8 @@ const buildPersistedImprovementSuggestions = (
       detected_domain: parsed.detected_domain,
       skill_gaps: parsed.skill_gaps ?? [],
       learning_recommendations: parsed.learning_recommendations ?? [],
+      career_goal_source: analysisSource === "gemini" && (parsed.suggested_roles?.length ?? 0) > 0 ? "gemini" : "department_fallback",
+      learning_recommendation_source: analysisSource === "gemini" && (parsed.learning_recommendations?.length ?? 0) > 0 ? "gemini" : "template_fallback",
     })}`,
   ];
 };
@@ -291,7 +387,7 @@ const parseStrictAnalysisJson = (raw: string): AnalysisPayload => {
   const extractedSkills = ensureStringArray(parsed.extracted_skills, "extracted_skills");
   const strengths = ensureStringArray(parsed.strengths, "strengths");
   const weaknesses = ensureStringArray(parsed.weaknesses, "weaknesses");
-  const suggestedRoles = ensureStringArray(parsed.suggested_roles, "suggested_roles");
+  const suggestedRoles = uniqueStrings(ensureStringArray(parsed.suggested_roles, "suggested_roles"));
   const skillGaps = parseSkillGaps(parsed.skill_gaps);
   const learningRecommendations = parseLearningRecommendations(parsed.learning_recommendations);
 
@@ -821,6 +917,7 @@ export default async function handler(req: any, res: any) {
 Detect the student’s career domain from the CV evidence. Do not force every CV into software.
 Support different domains such as software, chemical engineering, psychology/HR, law, finance, marketing, design, education, engineering, and health.
 Return realistic skill gaps based on the CV. Use conservative wording. Do not invent fake certificates or fake websites.
+For learning_recommendations, prefer real resources from these trusted domains only: coursera.org, edx.org, learn.microsoft.com, developers.google.com, freecodecamp.org, developer.mozilla.org, kaggle.com, shrm.org, apa.org, openlearn.open.ac.uk, ocw.mit.edu, skillsbuild.org.
 Return only JSON, no markdown. Use this exact structure and keys:
 {
   "detected_domain": string,
@@ -925,8 +1022,23 @@ ${extractedText}`;
 
     if (docUpdateError) throw new Error(docUpdateError.message);
 
+    const responsePayload = {
+      document_id: reportPayload.document_id,
+      student_id: reportPayload.student_id,
+      extracted_skills: reportPayload.extracted_skills,
+      strengths: reportPayload.strengths,
+      weaknesses: reportPayload.weaknesses,
+      suggested_roles: reportPayload.suggested_roles,
+      improvement_suggestions: reportPayload.improvement_suggestions,
+      overall_score: reportPayload.overall_score,
+      analysis_status: reportPayload.analysis_status,
+      error_message: reportPayload.error_message,
+    };
+    const careerGoalSource = analysisSource === "gemini" && parsed.suggested_roles.length > 0 ? "gemini" : "department_fallback";
+    const learningRecommendationSource = analysisSource === "gemini" && (parsed.learning_recommendations?.length ?? 0) > 0 ? "gemini" : "template_fallback";
+
     return res.status(200).json({
-      ...reportPayload,
+      ...responsePayload,
       detected_domain: parsed.detected_domain,
       skill_gaps: parsed.skill_gaps,
       learning_recommendations: parsed.learning_recommendations,
@@ -934,6 +1046,8 @@ ${extractedText}`;
       gemini_learning_recommendations: analysisSource === "gemini" ? parsed.learning_recommendations : [],
       analysis_source: analysisSource,
       analysis_model: analysisSource === "gemini" ? GEMINI_MODEL : null,
+      career_goal_source: careerGoalSource,
+      learning_recommendation_source: learningRecommendationSource,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

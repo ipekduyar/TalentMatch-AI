@@ -30,6 +30,18 @@ const estimateSkillLevel = (skill: string, analysis: CvAnalysisResult | null): n
   return 3;
 };
 
+
+const getUniqueValues = (items: string[]): string[] =>
+  items.reduce<string[]>((uniqueItems, item) => {
+    const trimmed = item.trim();
+    if (trimmed && !uniqueItems.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())) {
+      uniqueItems.push(trimmed);
+    }
+    return uniqueItems;
+  }, []);
+
+const isGeminiAnalysis = (analysis: CvAnalysisResult | null): boolean =>
+  (analysis as (CvAnalysisResult & { analysis_source?: string }) | null)?.analysis_source === "gemini";
 const getDepartmentCareerGoals = (department: string) => {
   const value = department.toLowerCase();
   if (value.includes("chemical")) return ["R&D Intern", "Process Engineering Intern", "Quality Control Intern", "Laboratory Intern", "Production Intern"];
@@ -60,10 +72,13 @@ export const OnboardingPage = () => {
 
   const step3Skills = useMemo(() => analysisResult?.extracted_skills?.filter((s) => s.trim().length > 0).slice(0, 8) ?? [], [analysisResult]);
   const step4CareerGoals = useMemo(() => {
-    const suggestedRoles = analysisResult?.suggested_roles?.filter((role) => role.trim().length > 0) ?? [];
-    if (suggestedRoles.length > 0) return suggestedRoles.slice(0, 8);
-    return getDepartmentCareerGoals(academicInfo.department).slice(0, 8);
+    const geminiSuggestedRoles = getUniqueValues(analysisResult?.suggested_roles ?? []);
+    if (isGeminiAnalysis(analysisResult) && geminiSuggestedRoles.length > 0) return geminiSuggestedRoles.slice(0, 8);
+    return getUniqueValues(getDepartmentCareerGoals(academicInfo.department)).slice(0, 8);
   }, [analysisResult, academicInfo.department]);
+  const step4SuggestionLabel = isGeminiAnalysis(analysisResult)
+    ? "Suggested from your CV analysis"
+    : "Suggested from your department";
   const uploadTimestamp = useMemo(() => (cvMetadata ? new Date(cvMetadata.uploadedAtIso).toLocaleString() : ""), [cvMetadata]);
 
   useEffect(() => {
@@ -241,7 +256,7 @@ export const OnboardingPage = () => {
                 {step3Skills.length > 0 && (
                   <span className="block text-xs text-slate-400">Initial levels are estimated from your CV. You can adjust them manually.</span>
                 )}</p></div><div className="space-y-4">{step3Skills.map((skill) => <div key={skill} className="p-4 border rounded-xl flex items-center justify-between"><span className="font-bold">{skill}</span><div className="flex items-center space-x-2">{[1,2,3,4,5].map(i => <button type="button" key={i} onClick={() => setSkillLevels((prev) => ({ ...prev, [skill]: i }))} className={`w-3 h-3 rounded-full transition-colors ${i <= (skillLevels[skill] ?? 3) ? 'bg-blue-600' : 'bg-slate-100'}`}></button>)}</div></div>)}</div></div>}
-            {step === 4 && <div className="space-y-6"><div className="text-center space-y-2"><h1 className="text-3xl font-bold text-slate-900">Your career goal</h1><p className="text-slate-500">{analysisResult ? "Based on your CV, these internship tracks may fit you." : "Suggestions based on your department and profile."}</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{step4CareerGoals.map((goal) => <button type="button" key={goal} onClick={() => setSelectedCareerGoal(goal)} className={`p-6 border rounded-2xl text-left transition-all active:scale-95 ${selectedCareerGoal === goal ? "border-blue-600 bg-blue-50" : "hover:border-blue-600 hover:bg-blue-50"}`}><p className="font-bold text-slate-900">{goal}</p></button>)}</div></div>}
+            {step === 4 && <div className="space-y-6"><div className="text-center space-y-2"><h1 className="text-3xl font-bold text-slate-900">Your career goal</h1><p className="text-slate-500">{isGeminiAnalysis(analysisResult) ? "Based on your CV, these internship tracks may fit you." : "Suggestions based on your department and profile."}</p><p className="text-xs font-semibold uppercase tracking-wide text-blue-600">{step4SuggestionLabel}</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{step4CareerGoals.map((goal) => <button type="button" key={goal} onClick={() => setSelectedCareerGoal(goal)} className={`p-6 border rounded-2xl text-left transition-all active:scale-95 ${selectedCareerGoal === goal ? "border-blue-600 bg-blue-50" : "hover:border-blue-600 hover:bg-blue-50"}`}><p className="font-bold text-slate-900">{goal}</p></button>)}</div></div>}
             <div className="flex items-center justify-between pt-8 border-t"><Button variant="ghost" onClick={handleBack} className={step === 1 ? 'invisible' : ''}><ChevronLeft className="w-4 h-4 mr-2" /> Back</Button><Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 px-8" disabled={(step===1&&savingAcademic)||(step===2&&uploadStatus==="uploading")||(step===4&&!selectedCareerGoal)}>{step === 4 ? 'Finish' : 'Continue'} <ChevronRight className="w-4 h-4 ml-2" /></Button></div>
           </motion.div>}
       </AnimatePresence>

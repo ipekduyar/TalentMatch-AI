@@ -31,6 +31,8 @@ export type StudentCvAnalysis = {
   overall_score: number | null;
   analysis_source?: AnalysisSource;
   analysis_model?: string | null;
+  career_goal_source?: "gemini" | "department_fallback";
+  learning_recommendation_source?: "gemini" | "template_fallback";
   created_at: string;
   updated_at: string;
 };
@@ -74,6 +76,64 @@ const validHttpUrl = (value: unknown): value is string => {
     return false;
   }
 };
+
+const TRUSTED_LEARNING_PROVIDER_DOMAINS = [
+  "coursera.org",
+  "edx.org",
+  "learn.microsoft.com",
+  "developers.google.com",
+  "freecodecamp.org",
+  "developer.mozilla.org",
+  "kaggle.com",
+  "shrm.org",
+  "apa.org",
+  "openlearn.open.ac.uk",
+  "ocw.mit.edu",
+  "skillsbuild.org",
+] as const;
+
+const TRUSTED_LEARNING_PROVIDER_URLS = [
+  { domain: "coursera.org", provider: "Coursera", url: "https://www.coursera.org/search?query=" },
+  { domain: "edx.org", provider: "edX", url: "https://www.edx.org/search?q=" },
+  { domain: "learn.microsoft.com", provider: "Microsoft Learn", url: "https://learn.microsoft.com/en-us/training/browse/?terms=" },
+  { domain: "developers.google.com", provider: "Google Developers", url: "https://developers.google.com/search?q=" },
+  { domain: "freecodecamp.org", provider: "freeCodeCamp", url: "https://www.freecodecamp.org/news/search/?query=" },
+  { domain: "developer.mozilla.org", provider: "MDN Web Docs", url: "https://developer.mozilla.org/en-US/search?q=" },
+  { domain: "kaggle.com", provider: "Kaggle", url: "https://www.kaggle.com/learn" },
+  { domain: "shrm.org", provider: "SHRM", url: "https://www.shrm.org/search#q=" },
+  { domain: "apa.org", provider: "APA", url: "https://www.apa.org/search?query=" },
+  { domain: "openlearn.open.ac.uk", provider: "OpenLearn", url: "https://openlearn.open.ac.uk/" },
+  { domain: "ocw.mit.edu", provider: "MIT OpenCourseWare", url: "https://ocw.mit.edu/search/?q=" },
+  { domain: "skillsbuild.org", provider: "IBM SkillsBuild", url: "https://skillsbuild.org/" },
+] as const;
+
+const isTrustedLearningUrl = (input: string): boolean => {
+  try {
+    const hostname = new URL(input).hostname.toLowerCase().replace(/^www\./, "");
+    return TRUSTED_LEARNING_PROVIDER_DOMAINS.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+};
+
+const findTrustedLearningProvider = (text: string) => {
+  const normalized = text.toLowerCase();
+  return TRUSTED_LEARNING_PROVIDER_URLS.find(({ domain, provider }) => normalized.includes(domain) || normalized.includes(provider.toLowerCase()));
+};
+
+const chooseTrustedLearningProvider = (recommendation: Record<string, unknown>) => {
+  const text = `${recommendation.provider ?? ""} ${recommendation.title ?? ""} ${recommendation.reason ?? ""}`.toLowerCase();
+  const explicitProvider = findTrustedLearningProvider(text);
+  if (explicitProvider) return explicitProvider;
+  if (/human resources|\bhr\b|recruit|talent|employee|people operations/.test(text)) return TRUSTED_LEARNING_PROVIDER_URLS[7];
+  if (/psychology|organizational|assessment|counsel/.test(text)) return TRUSTED_LEARNING_PROVIDER_URLS[8];
+  if (/data|machine learning|analytics|python|kaggle|statistics/.test(text)) return TRUSTED_LEARNING_PROVIDER_URLS[6];
+  if (/software|web|javascript|typescript|react|node|api|developer|programming/.test(text)) return TRUSTED_LEARNING_PROVIDER_URLS[0];
+  return TRUSTED_LEARNING_PROVIDER_URLS[0];
+};
+
+const trustedLearningUrlFor = (fallback: (typeof TRUSTED_LEARNING_PROVIDER_URLS)[number], title: string): string =>
+  fallback.url.endsWith("=") || fallback.url.endsWith("q=") ? `${fallback.url}${encodeURIComponent(title)}` : fallback.url;
 const nonEmpty = (value: unknown): value is string => typeof value === "string" && Boolean(value.trim());
 const sanitizeGeminiSkillGaps = (input: unknown): GeminiSkillGap[] => {
   if (!Array.isArray(input)) return [];
@@ -103,16 +163,22 @@ const sanitizeGeminiLearningRecommendations = (input: unknown): GeminiLearningRe
     .map((item): GeminiLearningRecommendation | null => {
       if (!item || typeof item !== "object") return null;
       const recommendation = item as Record<string, unknown>;
-      if (!nonEmpty(recommendation.title) || !nonEmpty(recommendation.provider) || !validHttpUrl(recommendation.url) || !nonEmpty(recommendation.reason)) return null;
+      if (!nonEmpty(recommendation.title) || !nonEmpty(recommendation.provider) || !nonEmpty(recommendation.reason)) return null;
+
+      const title = recommendation.title.trim();
+      const provider = recommendation.provider.trim();
+      const rawUrl = validHttpUrl(recommendation.url) ? recommendation.url.trim() : "";
+      const fallbackProvider = chooseTrustedLearningProvider({ ...recommendation, title, provider });
+      const url = rawUrl && isTrustedLearningUrl(rawUrl) ? rawUrl : trustedLearningUrlFor(fallbackProvider, title);
 
       return {
-        title: recommendation.title.trim(),
-        provider: recommendation.provider.trim(),
-        url: recommendation.url.trim(),
+        title,
+        provider,
+        url,
         reason: recommendation.reason.trim(),
       };
     })
-    .filter((recommendation): recommendation is GeminiLearningRecommendation => Boolean(recommendation));
+    .filter((recommendation): recommendation is GeminiLearningRecommendation => Boolean(recommendation) && isTrustedLearningUrl(recommendation.url));
 };
 const hasGeminiSource = (analysis: StudentCvAnalysis | null): boolean => analysis?.analysis_source === "gemini";
 const getValidatedGeminiSkillGaps = (analysis: StudentCvAnalysis | null): GeminiSkillGap[] =>
@@ -326,6 +392,8 @@ export const getCurrentStudentId = async (): Promise<string | null> => { /*...*/
 type PersistedGeminiAnalysisMetadata = {
   analysis_source?: AnalysisSource;
   analysis_model?: string | null;
+  career_goal_source?: "gemini" | "department_fallback";
+  learning_recommendation_source?: "gemini" | "template_fallback";
   detected_domain?: string;
   skill_gaps?: unknown;
   learning_recommendations?: unknown;
@@ -367,6 +435,8 @@ export const getLatestStudentCvAnalysis = async (): Promise<StudentCvAnalysis | 
     overall_score: typeof data.overall_score === "number" ? clamp(data.overall_score, 0, 100) : null,
     analysis_source: geminiMetadata?.analysis_source,
     analysis_model: geminiMetadata?.analysis_model,
+    career_goal_source: geminiMetadata?.career_goal_source,
+    learning_recommendation_source: geminiMetadata?.learning_recommendation_source,
     created_at: data.created_at ?? "",
     updated_at: data.updated_at ?? "",
   };
