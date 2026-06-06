@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 type SkillGapPriority = "High" | "Medium" | "Low";
+type AnalysisSource = "gemini" | "rule_based";
 
 type SkillGap = {
   skill: string;
@@ -233,9 +234,7 @@ const parseStrictAnalysisJson = (raw: string): AnalysisPayload => {
   try {
     parsed = JSON.parse(extractJsonObject(raw)) as Record<string, unknown>;
   } catch {
-    console.warn("Gemini JSON parsing failed", {
-      preview: truncateForLog(raw),
-    });
+    console.warn("Gemini JSON parsing failed");
     throw new Error("Failed to parse Gemini response as strict JSON.");
   }
 
@@ -281,6 +280,24 @@ const stringifyErrorForDetection = (error: unknown): string => {
   } catch {
     return String(error);
   }
+};
+
+const getSafeFallbackReason = (error: unknown): string => {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) {
+    return "gemini_quota_or_rate_limit";
+  }
+
+  if (message.includes("json")) {
+    return "gemini_invalid_json";
+  }
+
+  if (message.includes("schema validation") || message.includes("invalid ai output")) {
+    return "gemini_validation_failed";
+  }
+
+  return "gemini_failed";
 };
 
 type GeminiGenerateContentResponse = {
@@ -793,16 +810,36 @@ CV text:
 ${extractedText}`;
 
     let parsed: AnalysisPayload = buildFallbackAnalysis(extractedText);
+    let analysisSource: AnalysisSource = "rule_based";
+    let fallbackReason = "gemini_api_key_missing";
+
     if (process.env.GEMINI_API_KEY) {
+      fallbackReason = "gemini_failed";
+
       try {
         const rawText = await requestGeminiAnalysis(prompt, process.env.GEMINI_API_KEY);
         parsed = parseStrictAnalysisJson(rawText);
+        analysisSource = "gemini";
+        fallbackReason = "not_applicable";
       } catch (error) {
+        fallbackReason = getSafeFallbackReason(error);
         console.error("Gemini analysis failed, using fallback.", {
           error: stringifyErrorForDetection(error),
           model: GEMINI_MODEL,
         });
       }
+    }
+
+    if (analysisSource === "gemini") {
+      console.info("CV analysis completed", {
+        source: "gemini",
+        model: GEMINI_MODEL,
+      });
+    } else {
+      console.info("CV analysis completed", {
+        source: "rule_based",
+        reason: fallbackReason,
+      });
     }
 
     const reportPayload = {
@@ -839,6 +876,8 @@ ${extractedText}`;
       detected_domain: parsed.detected_domain,
       skill_gaps: parsed.skill_gaps,
       learning_recommendations: parsed.learning_recommendations,
+      analysis_source: analysisSource,
+      analysis_model: analysisSource === "gemini" ? GEMINI_MODEL : null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
