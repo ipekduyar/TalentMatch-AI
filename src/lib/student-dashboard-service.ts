@@ -2,12 +2,14 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { InternshipPosting } from "@/lib/types";
 
 export type LatestCvAnalysis = {
+  detected_domain?: string;
   extracted_skills: string[];
   strengths: string[];
   weaknesses: string[];
   suggested_roles: string[];
   improvement_suggestions: string[];
   overall_score: number | null;
+  analysis_source?: "gemini" | "rule_based";
   created_at: string;
 };
 
@@ -45,6 +47,22 @@ export type StudentDashboardActivityData = {
   learningProgress: DashboardLearningProgressPoint[];
 };
 
+const GEMINI_ANALYSIS_METADATA_PREFIX = "__gemini_analysis_metadata__:";
+
+const parsePersistedGeminiMetadata = (items: string[]) => {
+  const marker = items.find((item) => item.startsWith(GEMINI_ANALYSIS_METADATA_PREFIX));
+  if (!marker) return null;
+
+  try {
+    return JSON.parse(marker.slice(GEMINI_ANALYSIS_METADATA_PREFIX.length)) as { detected_domain?: string; analysis_source?: "gemini" | "rule_based" };
+  } catch {
+    return null;
+  }
+};
+
+const withoutPersistedMetadata = (items: string[]) =>
+  items.filter((item) => !item.startsWith(GEMINI_ANALYSIS_METADATA_PREFIX));
+
 const toDateLabel = (iso: string) => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Recently";
@@ -74,13 +92,18 @@ export const getLatestCompletedCvAnalysis = async (): Promise<LatestCvAnalysis |
 
   if (analysisError || !analysis) return null;
 
+  const improvementSuggestions = Array.isArray(analysis.improvement_suggestions) ? analysis.improvement_suggestions : [];
+  const geminiMetadata = parsePersistedGeminiMetadata(improvementSuggestions);
+
   return {
+    detected_domain: typeof geminiMetadata?.detected_domain === "string" ? geminiMetadata.detected_domain : undefined,
     extracted_skills: Array.isArray(analysis.extracted_skills) ? analysis.extracted_skills : [],
     strengths: Array.isArray(analysis.strengths) ? analysis.strengths : [],
     weaknesses: Array.isArray(analysis.weaknesses) ? analysis.weaknesses : [],
     suggested_roles: Array.isArray(analysis.suggested_roles) ? analysis.suggested_roles : [],
-    improvement_suggestions: Array.isArray(analysis.improvement_suggestions) ? analysis.improvement_suggestions : [],
+    improvement_suggestions: withoutPersistedMetadata(improvementSuggestions),
     overall_score: typeof analysis.overall_score === "number" ? analysis.overall_score : null,
+    analysis_source: geminiMetadata?.analysis_source === "gemini" ? "gemini" : geminiMetadata?.analysis_source === "rule_based" ? "rule_based" : undefined,
     created_at: typeof analysis.created_at === "string" ? analysis.created_at : "",
   };
 };
@@ -114,7 +137,7 @@ export const getActiveInternshipPostings = async (): Promise<InternshipPosting[]
     status: posting.status,
     created_at: posting.created_at,
     deadline: posting.deadline,
-    company_name: posting.companies?.name ?? "Unknown Company",
+    company_name: ((Array.isArray(posting.companies) ? posting.companies[0] : posting.companies) as { name?: string } | null | undefined)?.name ?? "Unknown Company",
   }));
 };
 
