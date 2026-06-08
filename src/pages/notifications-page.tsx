@@ -21,6 +21,12 @@ const formatDate = (value: string) => {
   }).format(date);
 };
 
+const NOTIFICATIONS_UPDATED_EVENT = "notifications-updated";
+
+const dispatchNotificationsUpdated = () => {
+  window.dispatchEvent(new CustomEvent(NOTIFICATIONS_UPDATED_EVENT));
+};
+
 const getNotificationIcon = (type: string) => {
   if (type === "new_message") return Mail;
   if (type === "status_update") return CheckCircle2;
@@ -41,6 +47,7 @@ export const NotificationsPage = () => {
     setError(null);
     try {
       setNotifications(await getCurrentUserNotifications());
+      dispatchNotificationsUpdated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load notifications.");
     } finally {
@@ -61,7 +68,7 @@ export const NotificationsPage = () => {
       setNotifications((current) => current.map((item) => (
         item.notificationId === notification.notificationId ? { ...item, isRead: true } : item
       )));
-      window.dispatchEvent(new Event("notifications:updated"));
+      dispatchNotificationsUpdated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not mark notification as read.");
     } finally {
@@ -76,7 +83,7 @@ export const NotificationsPage = () => {
     try {
       await markAllNotificationsAsRead();
       setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
-      window.dispatchEvent(new Event("notifications:updated"));
+      dispatchNotificationsUpdated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not mark notifications as read.");
     } finally {
