@@ -32,6 +32,7 @@ import { Button } from "./components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "./components/ui/avatar";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./components/ui/card";
 import { RoleSwitcher } from "./components/role-switcher";
+import { getUnreadNotificationCount } from "./lib/notifications-service";
 import { cn } from "./lib/utils";
 
 // Layouts
@@ -67,6 +68,7 @@ const PublicLayout = ({ children }: { children: React.ReactNode }) => (
 const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const { user, role, logout } = useCurrentUser();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const location = useLocation();
 
   const studentNav = [
@@ -84,6 +86,7 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
     { name: 'My Postings', href: '/company/postings', icon: Briefcase },
     { name: 'New Posting', href: '/company/postings/new', icon: Briefcase },
     { name: 'Messages', href: '/company/messages', icon: MessageSquare },
+    { name: 'Notifications', href: '/notifications', icon: Bell },
     { name: 'Profile', href: '/company/profile', icon: Users },
     { name: 'Evaluations', href: '/company/evaluations', icon: ShieldCheck },
     { name: 'Billing', href: '/company/billing', icon: Settings },
@@ -98,6 +101,32 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
   ];
 
   const navItems = role === 'student' ? studentNav : role === 'company_rep' ? companyNav : adminNav;
+
+  useEffect(() => {
+    if (role !== 'student' && role !== 'company_rep') {
+      setUnreadNotificationCount(0);
+      return;
+    }
+
+    let isMounted = true;
+    const loadUnreadCount = async () => {
+      try {
+        const count = await getUnreadNotificationCount();
+        if (isMounted) setUnreadNotificationCount(count);
+      } catch (error) {
+        if (isMounted) setUnreadNotificationCount(0);
+        console.warn('Could not load unread notification count.', error);
+      }
+    };
+
+    void loadUnreadCount();
+    window.addEventListener('notifications:updated', loadUnreadCount);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('notifications:updated', loadUnreadCount);
+    };
+  }, [role, location.pathname]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex overflow-hidden">
@@ -160,10 +189,14 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
           </div>
 
           <div className="flex items-center space-x-6">
-             <button className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 relative transition-colors">
+             <Link to="/notifications" className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 relative transition-colors" aria-label="Notifications">
                <Bell className="w-5 h-5" />
-               <span className="absolute top-2 right-2 w-2 h-2 bg-indigo-600 rounded-full border-2 border-white"></span>
-             </button>
+               {unreadNotificationCount > 0 && (
+                 <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white ring-2 ring-white">
+                   {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                 </span>
+               )}
+             </Link>
              <div className="h-4 w-[1px] bg-slate-200"></div>
              <Link to="/account" className="flex items-center space-x-3 group cursor-pointer">
                <div className="text-right hidden sm:block">
@@ -293,7 +326,7 @@ export default function App() {
           <Route path="/skill-gaps/:id" element={<ProtectedRoute allowedRoles={['student']}><SkillGapPage /></ProtectedRoute>} />
           <Route path="/messages" element={<ProtectedRoute allowedRoles={['student']}><MessagesPage /></ProtectedRoute>} />
           <Route path="/messages/:id" element={<ProtectedRoute allowedRoles={['student']}><MessagesPage /></ProtectedRoute>} />
-          <Route path="/notifications" element={<ProtectedRoute allowedRoles={['student']}><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute allowedRoles={['student', 'company_rep']}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/learning-path" element={<ProtectedRoute allowedRoles={['student']}><LearningPathPage /></ProtectedRoute>} />
           <Route path="/applications" element={<ProtectedRoute allowedRoles={['student']}><MyApplicationsPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute allowedRoles={['student']}><ProfilePage /></ProtectedRoute>} />
