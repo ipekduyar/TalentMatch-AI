@@ -120,11 +120,11 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
     };
 
     void loadUnreadCount();
-    window.addEventListener('notifications:updated', loadUnreadCount);
+    window.addEventListener('notifications-updated', loadUnreadCount);
 
     return () => {
       isMounted = false;
-      window.removeEventListener('notifications:updated', loadUnreadCount);
+      window.removeEventListener('notifications-updated', loadUnreadCount);
     };
   }, [role, location.pathname]);
 
@@ -150,21 +150,40 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
         </div>
 
         <nav className="flex-1 py-10 px-4 space-y-2 overflow-y-auto">
-          {navItems.map((item) => (
-            <Link 
-              key={item.href} 
-              to={item.href}
-              className={cn(
-                "flex items-center space-x-3 px-4 py-3 rounded-2xl transition-all font-bold text-sm tracking-tight",
-                location.pathname === item.href 
-                  ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-50" 
-                  : "text-slate-400 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <item.icon className="w-5 h-5 flex-shrink-0" />
-              <span className={cn(!isSidebarOpen && "hidden")}>{item.name}</span>
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const showNotificationBadge = item.name === 'Notifications' && unreadNotificationCount > 0;
+            const unreadBadgeLabel = unreadNotificationCount > 99 ? '99+' : unreadNotificationCount > 9 ? '9+' : unreadNotificationCount;
+
+            return (
+              <Link 
+                key={item.href} 
+                to={item.href}
+                className={cn(
+                  "flex items-center space-x-3 px-4 py-3 rounded-2xl transition-all font-bold text-sm tracking-tight",
+                  location.pathname === item.href 
+                    ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-50" 
+                    : "text-slate-400 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <div className="relative flex-shrink-0">
+                  <item.icon className="w-5 h-5" />
+                  {showNotificationBadge && !isSidebarOpen && (
+                    <span className="absolute -right-2 -top-2 min-w-4 rounded-full bg-rose-600 px-1 text-center text-[9px] font-black leading-4 text-white ring-2 ring-white">
+                      {unreadBadgeLabel}
+                    </span>
+                  )}
+                </div>
+                <span className={cn("flex min-w-0 flex-1 items-center justify-between gap-2", !isSidebarOpen && "hidden")}>
+                  <span className="truncate">{item.name}</span>
+                  {showNotificationBadge && (
+                    <span className="min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white">
+                      {unreadBadgeLabel}
+                    </span>
+                  )}
+                </span>
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-slate-200 bg-slate-50/50">
