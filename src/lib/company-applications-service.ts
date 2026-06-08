@@ -375,9 +375,7 @@ export const updateApplicationStatus = async (applicationId: string, status: App
     .select(`
       application_id,
       status,
-      updated_at,
-      students(person_id),
-      internship_postings(title)
+      updated_at
     `)
     .maybeSingle();
 
@@ -391,16 +389,16 @@ export const updateApplicationStatus = async (applicationId: string, status: App
   }
 
   if (notificationStatuses.includes(status)) {
-    const row = data as any;
-    const student = Array.isArray(row.students) ? row.students[0] : row.students;
-    const posting = Array.isArray(row.internship_postings) ? row.internship_postings[0] : row.internship_postings;
-
-    if (student?.person_id) {
+    try {
       await createApplicationStatusNotification({
-        applicationId: row.application_id,
-        studentPersonId: student.person_id,
-        postingTitle: posting?.title ?? "this role",
+        applicationId: data.application_id,
         status,
+      });
+    } catch (notificationError) {
+      console.warn("Application status updated, but notification creation failed.", {
+        applicationId: data.application_id,
+        status,
+        error: notificationError,
       });
     }
   }

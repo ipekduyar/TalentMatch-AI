@@ -233,62 +233,18 @@ export async function sendMessage(conversationId: string, body: string): Promise
   if (convError) throw new Error(convError.message || "Could not update conversation.");
 
   if (message?.message_id) {
-    await createNotificationsForMessage(conversationId, message.message_id, ctx);
-  }
-}
-
-async function createNotificationsForMessage(conversationId: string, messageId: string, ctx: PersonContext): Promise<void> {
-  const client = ensureClient();
-  const { data: conversation, error } = await client
-    .from("conversations")
-    .select("conversation_id,student_id,company_id,students(persons(person_id,first_name,last_name,email)),companies(name)")
-    .eq("conversation_id", conversationId)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message || "Could not load conversation participants.");
-  if (!conversation) return;
-
-  const row = conversation as any;
-  const student = Array.isArray(row.students) ? row.students[0] : row.students;
-  const studentPerson = Array.isArray(student?.persons) ? student.persons[0] : student?.persons;
-  const company = Array.isArray(row.companies) ? row.companies[0] : row.companies;
-
-  if (ctx.role === "company_rep" && studentPerson?.person_id && studentPerson.person_id !== ctx.person.person_id) {
-    await createMessageNotification({
-      messageId,
-      conversationId,
-      recipientPersonId: studentPerson.person_id,
-      senderName: company?.name ?? "Company",
-    });
-    return;
-  }
-
-  if (ctx.role === "student" && row.company_id) {
-    const { data: representatives, error: repsError } = await client
-      .from("company_representatives")
-      .select("persons(person_id)")
-      .eq("company_id", row.company_id);
-
-    if (repsError) throw new Error(repsError.message || "Could not load company representatives.");
-
-    const senderName = [ctx.person.first_name, ctx.person.last_name].filter(Boolean).join(" ").trim() || ctx.person.email || "Student";
-    const recipientPersonIds = new Set(
-      ((representatives ?? []) as any[])
-        .map((rep) => {
-          const person = Array.isArray(rep.persons) ? rep.persons[0] : rep.persons;
-          return person?.person_id as string | undefined;
-        })
-        .filter((personId): personId is string => Boolean(personId) && personId !== ctx.person.person_id),
-    );
-
-    await Promise.all(Array.from(recipientPersonIds).map((recipientPersonId) =>
-      createMessageNotification({
-        messageId,
+    try {
+      await createMessageNotification({
+        messageId: message.message_id,
         conversationId,
-        recipientPersonId,
-        senderName,
-      }),
-    ));
+      });
+    } catch (notificationError) {
+      console.warn("Message sent, but notification creation failed.", {
+        messageId: message.message_id,
+        conversationId,
+        error: notificationError,
+      });
+    }
   }
 }
 
