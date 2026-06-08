@@ -91,65 +91,210 @@ for update using (
   )
 );
 
-create policy notifications_insert_status_for_company_applications on public.notifications
-for insert with check (
-  notifications.type = 'status_update'
-  and notifications.related_application_id is not null
-  and notifications.event_key ~ ('^status:' || notifications.related_application_id::text || ':(reviewed|shortlisted|interview|accepted|rejected)$')
-  and exists (
-    select 1
-    from public.applications a
-    join public.students s on s.student_id = a.student_id
-    join public.company_representatives cr on cr.company_id = a.company_id
-    join public.persons actor on actor.person_id = cr.person_id
-    where a.application_id = notifications.related_application_id
-      and s.person_id = notifications.person_id
-      and actor.auth_user_id = auth.uid()
-  )
-);
 
-create policy notifications_insert_messages_for_conversation_participants on public.notifications
-for insert with check (
-  notifications.type = 'new_message'
-  and notifications.related_conversation_id is not null
-  and notifications.event_key like 'message:%'
-  and exists (
-    select 1
-    from public.persons actor
-    where actor.auth_user_id = auth.uid()
-      and actor.person_id <> notifications.person_id
-      and exists (
-        select 1
-        from public.conversations c
-        where c.conversation_id = notifications.related_conversation_id
-          and (
-            exists (
-              select 1
-              from public.students sender_student
-              where sender_student.student_id = c.student_id
-                and sender_student.person_id = actor.person_id
-            )
-            or exists (
-              select 1
-              from public.company_representatives sender_rep
-              where sender_rep.company_id = c.company_id
-                and sender_rep.person_id = actor.person_id
-            )
-          )
-          and (
-            exists (
-              select 1
-              from public.students recipient_student
-              where recipient_student.student_id = c.student_id
-                and recipient_student.person_id = notifications.person_id
-            )
-            or exists (
-              select 1
-              from public.company_representatives recipient_rep
-              where recipient_rep.company_id = c.company_id
-                and recipient_rep.person_id = notifications.person_id
-            )
-          )
-      )
+create or replace function public.create_status_notification(
+  p_application_id uuid,
+  p_status text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_notification_id uuid;
+  v_event_key text;
+  v_student_person_id uuid;
+  v_posting_title text;
+  v_status_label text;
+begin
+  if p_status not in ('reviewed', 'shortlisted', 'interview', 'accepted', 'rejected') then
+    raise exception 'Invalid notification status: %', p_status using errcode = '22023';
+  end if;
+
+  select s.person_id, ip.title
+    into v_student_person_id, v_posting_title
+  from public.applications a
+  join public.students s on s.student_id = a.student_id
+  left join public.internship_postings ip on ip.internship_posting_id = a.internship_posting_id
+  join public.company_representatives cr on cr.company_id = a.company_id
+  join public.persons actor on actor.person_id = cr.person_id
+  where a.application_id = p_application_id
+    and actor.auth_user_id = auth.uid()
+  limit 1;
+
+  if v_student_person_id is null then
+    raise exception 'Application not found or not accessible' using errcode = '42501';
+  end if;
+
+  v_event_key := 'status:' || p_application_id::text || ':' || p_status;
+  v_status_label := initcap(replace(p_status, '_', ' '));
+
+  insert into public.notifications (
+    person_id,
+    type,
+    title,
+    message,
+    related_application_id,
+    related_conversation_id,
+    event_key,
+    is_read
+  ) values (
+    v_student_person_id,
+    'status_update',
+    'Application status updated',
+    'Your application for ' || coalesce(nullif(v_posting_title, ''), 'this role') || ' is now ' || v_status_label || '.',
+    p_application_id,
+    null,
+    v_event_key,
+    false
   )
-);
+  on conflict (event_key) do nothing
+  returning notification_id into v_notification_id;
+
+  if v_notification_id is null then
+    select n.notification_id
+      into v_notification_id
+    from public.notifications n
+    where n.event_key = v_event_key;
+  end if;
+
+  return v_notification_id;
+end;
+$$;
+
+create or replace function public.create_message_notification(
+  p_message_id uuid,
+  p_conversation_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_notification_id uuid;
+  v_event_key text;
+  v_sender_person_id uuid;
+  v_sender_name text;
+  v_recipient_person_id uuid;
+  v_student_person_id uuid;
+  v_company_id uuid;
+  v_message_conversation_id uuid;
+begin
+  select p.person_id,
+         coalesce(nullif(trim(concat_ws(' ', p.first_name, p.last_name)), ''), p.email, 'a TalentMatch user')
+    into v_sender_person_id, v_sender_name
+  from public.persons p
+  where p.auth_user_id = auth.uid()
+  limit 1;
+
+  if v_sender_person_id is null then
+    raise exception 'Authenticated person not found' using errcode = '42501';
+  end if;
+
+  select m.sender_person_id, m.conversation_id
+    into v_sender_person_id, v_message_conversation_id
+  from public.messages m
+  where m.message_id = p_message_id;
+
+  if v_message_conversation_id is null then
+    raise exception 'Message not found' using errcode = '42501';
+  end if;
+
+  if v_message_conversation_id <> p_conversation_id then
+    raise exception 'Message does not belong to conversation' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1
+    from public.persons p
+    where p.person_id = v_sender_person_id
+      and p.auth_user_id = auth.uid()
+  ) then
+    raise exception 'Message sender does not match authenticated user' using errcode = '42501';
+  end if;
+
+  select c.company_id, s.person_id
+    into v_company_id, v_student_person_id
+  from public.conversations c
+  join public.students s on s.student_id = c.student_id
+  where c.conversation_id = p_conversation_id;
+
+  if v_company_id is null or v_student_person_id is null then
+    raise exception 'Conversation not found or missing participants' using errcode = '42501';
+  end if;
+
+  if v_sender_person_id = v_student_person_id then
+    select cr.person_id
+      into v_recipient_person_id
+    from public.company_representatives cr
+    where cr.company_id = v_company_id
+      and cr.person_id <> v_sender_person_id
+    order by cr.person_id
+    limit 1;
+  else
+    if not exists (
+      select 1
+      from public.company_representatives cr
+      where cr.company_id = v_company_id
+        and cr.person_id = v_sender_person_id
+    ) then
+      raise exception 'Sender is not a conversation participant' using errcode = '42501';
+    end if;
+
+    v_recipient_person_id := v_student_person_id;
+
+    select coalesce(nullif(c.name, ''), v_sender_name)
+      into v_sender_name
+    from public.companies c
+    where c.company_id = v_company_id;
+  end if;
+
+  if v_recipient_person_id is null then
+    raise exception 'Notification recipient not found' using errcode = '42501';
+  end if;
+
+  if v_recipient_person_id = v_sender_person_id then
+    raise exception 'Sender and recipient must differ' using errcode = '22023';
+  end if;
+
+  v_event_key := 'message:' || p_message_id::text;
+
+  insert into public.notifications (
+    person_id,
+    type,
+    title,
+    message,
+    related_application_id,
+    related_conversation_id,
+    event_key,
+    is_read
+  ) values (
+    v_recipient_person_id,
+    'new_message',
+    'New message',
+    'You received a new message from ' || coalesce(nullif(v_sender_name, ''), 'a TalentMatch user') || '.',
+    null,
+    p_conversation_id,
+    v_event_key,
+    false
+  )
+  on conflict (event_key) do nothing
+  returning notification_id into v_notification_id;
+
+  if v_notification_id is null then
+    select n.notification_id
+      into v_notification_id
+    from public.notifications n
+    where n.event_key = v_event_key;
+  end if;
+
+  return v_notification_id;
+end;
+$$;
+
+revoke all on function public.create_status_notification(uuid, text) from public;
+revoke all on function public.create_message_notification(uuid, uuid) from public;
+grant execute on function public.create_status_notification(uuid, text) to authenticated;
+grant execute on function public.create_message_notification(uuid, uuid) to authenticated;

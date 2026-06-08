@@ -15,16 +15,6 @@ export type AppNotification = {
   createdAt: string;
 };
 
-type NotificationInsert = {
-  person_id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  related_application_id?: string | null;
-  related_conversation_id?: string | null;
-  event_key: string;
-};
-
 function ensureClient() {
   if (!isSupabaseConfigured || !supabase) throw new Error("Supabase is not configured.");
   return supabase;
@@ -62,55 +52,30 @@ async function getCurrentPersonId(): Promise<string> {
   return person.person_id;
 }
 
-async function insertNotificationOnce(payload: NotificationInsert): Promise<void> {
-  const client = ensureClient();
-  const { error } = await client
-    .from("notifications")
-    .upsert(
-      {
-        ...payload,
-        is_read: false,
-      },
-      { onConflict: "event_key", ignoreDuplicates: true },
-    );
-
-  if (error) throw new Error(error.message || "Could not create notification.");
-}
-
 export async function createApplicationStatusNotification(params: {
   applicationId: string;
-  studentPersonId: string;
-  postingTitle: string;
   status: string;
 }): Promise<void> {
-  const statusLabel = params.status.charAt(0).toUpperCase() + params.status.slice(1).replace(/_/g, " ");
-
-  await insertNotificationOnce({
-    person_id: params.studentPersonId,
-    type: "status_update",
-    title: "Application status updated",
-    message: `Your application for ${params.postingTitle || "this role"} is now ${statusLabel}.`,
-    related_application_id: params.applicationId,
-    related_conversation_id: null,
-    event_key: `status:${params.applicationId}:${params.status}`,
+  const client = ensureClient();
+  const { error } = await client.rpc("create_status_notification", {
+    p_application_id: params.applicationId,
+    p_status: params.status,
   });
+
+  if (error) throw new Error(error.message || "Could not create application status notification.");
 }
 
 export async function createMessageNotification(params: {
   messageId: string;
   conversationId: string;
-  recipientPersonId: string;
-  senderName: string;
 }): Promise<void> {
-  await insertNotificationOnce({
-    person_id: params.recipientPersonId,
-    type: "new_message",
-    title: "New message",
-    message: `You received a new message from ${params.senderName || "a TalentMatch user"}.`,
-    related_application_id: null,
-    related_conversation_id: params.conversationId,
-    event_key: `message:${params.messageId}`,
+  const client = ensureClient();
+  const { error } = await client.rpc("create_message_notification", {
+    p_message_id: params.messageId,
+    p_conversation_id: params.conversationId,
   });
+
+  if (error) throw new Error(error.message || "Could not create message notification.");
 }
 
 export async function getCurrentUserNotifications(): Promise<AppNotification[]> {
