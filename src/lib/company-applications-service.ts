@@ -1,3 +1,4 @@
+import { createApplicationStatusNotification } from "@/lib/notifications-service";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 export type ApplicationStatus = "submitted" | "reviewed" | "shortlisted" | "interview" | "rejected" | "accepted";
@@ -356,6 +357,7 @@ export const getPostingTitle = async (postingId: string): Promise<string> => {
 export const updateApplicationStatus = async (applicationId: string, status: ApplicationStatus): Promise<{ application_id: string; status: ApplicationStatus; updated_at: string | null }> => {
   const client = ensureSupabase();
   const allowedStatuses: ApplicationStatus[] = ["submitted", "reviewed", "shortlisted", "interview", "rejected", "accepted"];
+  const notificationStatuses: ApplicationStatus[] = ["reviewed", "shortlisted", "interview", "rejected", "accepted"];
   if (!allowedStatuses.includes(status)) {
     throw new Error("Invalid application status.");
   }
@@ -370,7 +372,13 @@ export const updateApplicationStatus = async (applicationId: string, status: App
     })
     .eq("application_id", applicationId)
     .eq("company_id", companyId)
-    .select("application_id, status, updated_at")
+    .select(`
+      application_id,
+      status,
+      updated_at,
+      students(person_id),
+      internship_postings(title)
+    `)
     .maybeSingle();
 
   if (error) {
@@ -380,6 +388,21 @@ export const updateApplicationStatus = async (applicationId: string, status: App
 
   if (!data) {
     throw new Error("Application status could not be updated. Please check company permissions.");
+  }
+
+  if (notificationStatuses.includes(status)) {
+    const row = data as any;
+    const student = Array.isArray(row.students) ? row.students[0] : row.students;
+    const posting = Array.isArray(row.internship_postings) ? row.internship_postings[0] : row.internship_postings;
+
+    if (student?.person_id) {
+      await createApplicationStatusNotification({
+        applicationId: row.application_id,
+        studentPersonId: student.person_id,
+        postingTitle: posting?.title ?? "this role",
+        status,
+      });
+    }
   }
 
   return {
