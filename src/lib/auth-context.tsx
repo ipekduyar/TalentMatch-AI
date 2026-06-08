@@ -43,6 +43,20 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = 'talentmatch_user_id';
+
+const CONSENT_VERSION = 'v1.0';
+
+const buildConsentPersistencePayload = () => {
+  const consentedAt = new Date().toISOString();
+  return {
+    kvkk_consent: true,
+    kvkk_consent_at: consentedAt,
+    terms_consent: true,
+    terms_consent_at: consentedAt,
+    consent_version: CONSENT_VERSION,
+  };
+};
+
 const LEGACY_MOCK_AUTH_KEYS = [
   STORAGE_KEY,
   'talentmatch_mock_user_id',
@@ -285,6 +299,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     console.log('Signup type', data.type);
     console.log('Supabase configured', isSupabaseConfigured);
 
+    if (data.kvkkConsent !== true || data.termsConsent !== true) {
+      throw new Error('KVKK consent and Terms & Conditions consent are required to create an account.');
+    }
+
     if (isSupabaseConfigured) {
       if (!supabase || !data.password) throw new Error('Supabase is configured but client is unavailable.');
 
@@ -328,6 +346,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Supabase signUp succeeded but no auth user id was returned.');
         }
         console.log('Auth signup ok', auth.user?.id);
+
+        const consentPayload = buildConsentPersistencePayload();
+        const { data: persistedConsentPerson, error: consentError } = await supabase
+          .from('persons')
+          .update(consentPayload)
+          .eq('auth_user_id', authUserId)
+          .select('person_id, auth_user_id, kvkk_consent, kvkk_consent_at, terms_consent, terms_consent_at, consent_version')
+          .maybeSingle();
+
+        if (consentError) {
+          console.error('Consent persistence failed', consentError);
+          throw new Error(`Account was created, but required consent could not be saved. Please contact support before continuing. ${formatErrorMessage(consentError)}`);
+        }
+
+        if (!persistedConsentPerson) {
+          throw new Error('Account was created, but required consent could not be saved because the profile row was not found. Please contact support before continuing.');
+        }
+
+        if (
+          persistedConsentPerson.kvkk_consent !== true ||
+          !persistedConsentPerson.kvkk_consent_at ||
+          persistedConsentPerson.terms_consent !== true ||
+          !persistedConsentPerson.terms_consent_at ||
+          persistedConsentPerson.consent_version !== CONSENT_VERSION
+        ) {
+          throw new Error('Account was created, but required consent verification failed. Please contact support before continuing.');
+        }
+
         const immediatePerson = buildPersonFromAuthUser(authUser, role);
         setUser(immediatePerson);
         setRole(role);
@@ -361,8 +407,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       last_name: data.lastName,
       email: data.email,
       role: data.type === 'company' ? 'company_rep' : 'student',
-      kvkk_consent: data.kvkkConsent,
-      kvkk_consent_at: data.kvkkConsent ? new Date().toISOString() : null,
+      kvkk_consent: true,
+      kvkk_consent_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       is_active: true,
       avatar_url: null,

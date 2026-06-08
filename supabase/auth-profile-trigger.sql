@@ -27,8 +27,10 @@ begin
     last_name,
     role,
     kvkk_consent,
+    kvkk_consent_at,
     terms_consent,
-    consent_given_at
+    terms_consent_at,
+    consent_version
   )
   values (
     new.id,
@@ -37,8 +39,15 @@ begin
     nullif(user_metadata ->> 'last_name', ''),
     coalesce(nullif(user_metadata ->> 'role', ''), 'student'),
     coalesce((user_metadata ->> 'kvkk_consent')::boolean, false),
+    case when coalesce((user_metadata ->> 'kvkk_consent')::boolean, false) then now() else null end,
     coalesce((user_metadata ->> 'terms_consent')::boolean, false),
-    now()
+    case when coalesce((user_metadata ->> 'terms_consent')::boolean, false) then now() else null end,
+    case
+      when coalesce((user_metadata ->> 'kvkk_consent')::boolean, false)
+        and coalesce((user_metadata ->> 'terms_consent')::boolean, false)
+      then 'v1.0'
+      else null
+    end
   )
   on conflict (auth_user_id) do update
   set
@@ -47,8 +56,10 @@ begin
     last_name = excluded.last_name,
     role = excluded.role,
     kvkk_consent = excluded.kvkk_consent,
+    kvkk_consent_at = excluded.kvkk_consent_at,
     terms_consent = excluded.terms_consent,
-    consent_given_at = excluded.consent_given_at
+    terms_consent_at = excluded.terms_consent_at,
+    consent_version = excluded.consent_version
   returning person_id into created_person_id;
 
   if coalesce(user_metadata ->> 'role', '') = 'student' then
