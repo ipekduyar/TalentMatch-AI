@@ -75,6 +75,7 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Search Internships', href: '/search', icon: Search },
     { name: 'My Applications', href: '/applications', icon: FileText },
+    { name: 'Evaluations', href: '/evaluations', icon: ShieldCheck },
     { name: 'Skill Gaps', href: '/skill-gaps', icon: AlertCircle },
     { name: 'Learning Path', href: '/learning-path', icon: GraduationCap },
     { name: 'Messages', href: '/messages', icon: MessageSquare },
@@ -348,6 +349,7 @@ export default function App() {
           <Route path="/notifications" element={<ProtectedRoute allowedRoles={['student', 'company_rep']}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/learning-path" element={<ProtectedRoute allowedRoles={['student']}><LearningPathPage /></ProtectedRoute>} />
           <Route path="/applications" element={<ProtectedRoute allowedRoles={['student']}><MyApplicationsPage /></ProtectedRoute>} />
+          <Route path="/evaluations" element={<ProtectedRoute allowedRoles={['student']}><StudentEvaluationsPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute allowedRoles={['student']}><ProfilePage /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute allowedRoles={['student']}><SettingsPage /></ProtectedRoute>} />
           <Route path="/account" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
@@ -401,5 +403,6 @@ import { CompanyProfilePage } from "./pages/company-profile";
 import { CompanyPostingsPage } from "./pages/company-postings";
 import { CompanyPostingsNewPage } from "./pages/company-postings-new";
 import { CompanyEvaluationsPage } from "./pages/company-evaluations";
+import { StudentEvaluationsPage } from "./pages/student-evaluations";
 import { CompanyBillingPage } from "./pages/company-billing";
 
