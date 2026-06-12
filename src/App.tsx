@@ -25,7 +25,6 @@ import {
   Briefcase,
   Users,
   Settings,
-  PieChart,
   ShieldCheck
 } from "lucide-react";
 import { Button } from "./components/ui/button";
@@ -34,6 +33,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./com
 import { RoleSwitcher } from "./components/role-switcher";
 import { getUnreadNotificationCount } from "./lib/notifications-service";
 import { cn } from "./lib/utils";
+import { assertCurrentUserIsAdmin } from "./lib/admin-service";
 
 // Layouts
 const PublicLayout = ({ children }: { children: React.ReactNode }) => (
@@ -94,11 +94,10 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
   ];
 
   const adminNav = [
-    { name: 'Overview', href: '/admin', icon: LayoutDashboard },
-    { name: 'Companies', href: '/admin/companies', icon: Briefcase },
-    { name: 'Reps', href: '/admin/representatives', icon: Users },
+    { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
     { name: 'Users', href: '/admin/users', icon: User },
-    { name: 'Analytics', href: '/admin/analytics', icon: PieChart },
+    { name: 'Companies', href: '/admin/companies', icon: Briefcase },
+    { name: 'Postings', href: '/admin/postings', icon: FileText },
   ];
 
   const navItems = role === 'student' ? studentNav : role === 'company_rep' ? companyNav : adminNav;
@@ -312,16 +311,58 @@ const LegacyLoginPage = () => {
 };
 
 // Auth Guard
+const getRoleDashboardPath = (role: string | null) => {
+  if (role === 'company_rep') return '/company/dashboard';
+  if (role === 'admin') return '/admin';
+  return '/dashboard';
+};
+
 const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) => {
   const { user, role, isLoading } = useCurrentUser();
   
-  if (isLoading) return <div>Loading...</div>;
+  if (isLoading) return <div className="p-8 text-sm font-bold text-slate-500">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (allowedRoles && !allowedRoles.includes(role || '')) {
-    const redirectPath = role === 'company_rep' ? '/company/dashboard' : role === 'admin' ? '/admin' : '/dashboard';
-    return <Navigate to={redirectPath} replace />;
+    return <Navigate to={getRoleDashboardPath(role)} replace />;
   }
   
+  return <AppLayout>{children}</AppLayout>;
+};
+
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, role, isLoading } = useCurrentUser();
+  const [isCheckingAdmin, setIsCheckingAdmin] = React.useState(true);
+  const [isAdmin, setIsAdmin] = React.useState(false);
+
+  React.useEffect(() => {
+    let mounted = true;
+    const verifyAdmin = async () => {
+      if (isLoading) return;
+      if (!user || role !== 'admin') {
+        setIsAdmin(false);
+        setIsCheckingAdmin(false);
+        return;
+      }
+
+      try {
+        const allowed = await assertCurrentUserIsAdmin();
+        if (mounted) setIsAdmin(allowed);
+      } catch (error) {
+        console.error('Admin access check failed', error);
+        if (mounted) setIsAdmin(false);
+      } finally {
+        if (mounted) setIsCheckingAdmin(false);
+      }
+    };
+
+    void verifyAdmin();
+    return () => { mounted = false; };
+  }, [isLoading, role, user]);
+
+  if (isLoading || isCheckingAdmin) return <div className="p-8 text-sm font-bold text-slate-500">Checking admin access...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!isAdmin) return <Navigate to={getRoleDashboardPath(role)} replace />;
+
   return <AppLayout>{children}</AppLayout>;
 };
 
@@ -366,11 +407,10 @@ export default function App() {
           <Route path="/company/billing" element={<ProtectedRoute allowedRoles={['company_rep']}><CompanyBillingPage /></ProtectedRoute>} />
 
           {/* Admin Routes */}
-          <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminPage /></ProtectedRoute>} />
-          <Route path="/admin/analytics" element={<ProtectedRoute allowedRoles={['admin']}><AdminPage /></ProtectedRoute>} />
-          <Route path="/admin/companies" element={<ProtectedRoute allowedRoles={['admin']}><AdminPage /></ProtectedRoute>} />
-          <Route path="/admin/representatives" element={<ProtectedRoute allowedRoles={['admin']}><AdminPage /></ProtectedRoute>} />
-          <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><AdminPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
+          <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
+          <Route path="/admin/companies" element={<AdminRoute><AdminCompaniesPage /></AdminRoute>} />
+          <Route path="/admin/postings" element={<AdminRoute><AdminPostingsPage /></AdminRoute>} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -390,7 +430,10 @@ import { SkillGapPage } from "./pages/skill-gap";
 import { CompanyDashboard } from "./pages/company-dashboard";
 import { ApplicantList } from "./pages/applicant-list";
 import { MessagesPage } from "./pages/messages-page";
-import { AdminPage } from "./pages/admin-page";
+import { AdminDashboardPage } from "./pages/admin-dashboard";
+import { AdminUsersPage } from "./pages/admin-users";
+import { AdminCompaniesPage } from "./pages/admin-companies";
+import { AdminPostingsPage } from "./pages/admin-postings";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProfilePage } from "./pages/profile-page";
 import { MyApplicationsPage } from "./pages/applications-page";
